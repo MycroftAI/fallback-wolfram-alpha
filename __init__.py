@@ -131,6 +131,7 @@ class WolframAlphaSkill(MycroftSkill):
         parsed_question = self.question_parser.parse(utterance)
 
         query = utterance
+        others = []
         if parsed_question:
             # Try to store pieces of utterance (None if not parsed_question)
             utt_word = parsed_question.get('QuestionWord')
@@ -154,7 +155,8 @@ class WolframAlphaSkill(MycroftSkill):
             self.enclosure.mouth_think()
             res = self.client.query(query)
             result = self.get_result(res)
-            others = self._find_did_you_mean(res)
+            if result is None:
+                others = self._find_did_you_mean(res)
         except HTTPError as e:
             if e.response.status_code == 401:
                 self.emitter.emit(Message("mycroft.not.paired"))
