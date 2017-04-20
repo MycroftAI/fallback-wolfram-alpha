@@ -237,6 +237,10 @@ class WolframAlphaSkill(MycroftSkill):
 
         return text
 
+    def shutdown(self):
+        self.emitter.off('intent_failure', self.handle_fallback)
+        super(WolframAlphaSkill, self).shutdown(self)
+
     def stop(self):
         pass
 
