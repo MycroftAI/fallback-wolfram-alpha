@@ -25,7 +25,7 @@ from requests import HTTPError
 
 from mycroft.api import Api
 from mycroft.messagebus.message import Message
-from mycroft.skills.core import MycroftSkill
+from mycroft.skills.core import FallbackSkill
 from mycroft.util.log import getLogger
 from mycroft.util.parse import normalize
 
@@ -82,12 +82,12 @@ class WAApi(Api):
         return wolframalpha.Result(StringIO(data.content))
 
 
-class WolframAlphaSkill(MycroftSkill):
+class WolframAlphaSkill(FallbackSkill):
     PIDS = ['Value', 'NotableFacts:PeopleData', 'BasicInformation:PeopleData',
             'Definition', 'DecimalApproximation']
 
     def __init__(self):
-        MycroftSkill.__init__(self, name="WolframAlphaSkill")
+        FallbackSkill.__init__(self, name="WolframAlphaSkill")
         self.__init_client()
         self.question_parser = EnglishQuestionParser()
 
