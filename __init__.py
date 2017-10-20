@@ -100,7 +100,7 @@ class WolframAlphaSkill(FallbackSkill):
 
     def initialize(self):
         self.init_dialog(dirname(__file__))
-        self.register_fallback(self.handle_fallback, 10)
+        self.register_fallback(self.handle_fallback, 9)
 
     def get_result(self, res):
         try:
