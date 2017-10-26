@@ -1,37 +1,32 @@
-# Copyright 2016 Mycroft AI, Inc.
+# Copyright 2017 Mycroft AI Inc.
 #
-# This file is part of Mycroft Core.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# Mycroft Core is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+#    http://www.apache.org/licenses/LICENSE-2.0
 #
-# Mycroft Core is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
-# You should have received a copy of the GNU General Public License
-# along with Mycroft Core.  If not, see <http://www.gnu.org/licenses/>.
-
-
 from StringIO import StringIO
 
 import re
-import wolframalpha
+import ssl
+import requests
+import json
+
 from os.path import dirname, join
 from requests import HTTPError
 
 from mycroft.api import Api
 from mycroft.messagebus.message import Message
 from mycroft.skills.core import FallbackSkill
-from mycroft.util.log import getLogger
+from mycroft.util.log import LOG
 from mycroft.util.parse import normalize
-
-__author__ = 'seanfitz'
-
-LOG = getLogger(__name__)
 
 
 class EnglishQuestionParser(object):
@@ -70,18 +65,6 @@ class EnglishQuestionParser(object):
         return None
 
 
-class WAApi(Api):
-    def __init__(self):
-        super(WAApi, self).__init__("wa")
-
-    def get_data(self, response):
-        return response
-
-    def query(self, input):
-        data = self.request({"query": {"input": input}})
-        return wolframalpha.Result(StringIO(data.content))
-
-
 class WolframAlphaSkill(FallbackSkill):
     PIDS = ['Value', 'NotableFacts:PeopleData', 'BasicInformation:PeopleData',
             'Definition', 'DecimalApproximation']
@@ -92,11 +75,7 @@ class WolframAlphaSkill(FallbackSkill):
         self.question_parser = EnglishQuestionParser()
 
     def __init_client(self):
-        key = self.config.get('api_key')
-        if key and not self.config.get('proxy'):
-            self.client = wolframalpha.Client(key)
-        else:
-            self.client = WAApi()
+        self.api_key = self.config.get('api_key')
 
     def initialize(self):
         self.init_dialog(dirname(__file__))
@@ -153,8 +132,32 @@ class WolframAlphaSkill(FallbackSkill):
 
         try:
             self.enclosure.mouth_think()
-            res = self.client.query(query)
-            result = self.get_result(res)
+
+            url = "https://api.wolframalpha.com/v2/query?input="
+            url += query.replace(" ", "+")
+            url += "&format=image,plaintext&output=JSON&appid="
+            url += self.api_key
+            res = requests.get(url)
+
+            resp = json.loads(res.content)
+            if resp["queryresult"]["success"]:
+                # We got a result structure, interpret it
+                # self.get_result(resp["queryresult"]["pods"])
+                LOG.info("parsing resp")
+                str = ""
+                for pod in resp["queryresult"]["pods"]:
+                    LOG.info("Pod title: "+pod["title"])
+                    if pod["title"] == "Result":
+                        str = pod["subpods"][0]["plaintext"]
+
+                str = re.sub("\(.*\)", "", str)
+                self.speak(str)
+                return True
+           
+            # res = self.client.query(query)
+            # SSP
+
+            # result = self.get_result(res)
             if result is None:
                 others = self._find_did_you_mean(res)
         except HTTPError as e:
@@ -162,6 +165,7 @@ class WolframAlphaSkill(FallbackSkill):
                 self.emitter.emit(Message("mycroft.not.paired"))
             return True
         except Exception as e:
+            LOG.info("Exception caught")	
             LOG.exception(e)
             return False
 
@@ -178,11 +182,17 @@ class WolframAlphaSkill(FallbackSkill):
             if "|" in result:  # Assuming "|" indicates a list of items
                 verb = ":"
 
+            LOG.info("Result: "+str(result))
             result = self.process_wolfram_string(result)
+            LOG.debug("======== Asking: "+input_interpretation)
             input_interpretation = \
                 self.process_wolfram_string(input_interpretation)
-            response = "%s %s %s" % (input_interpretation, verb, result)
 
+            # This approach speaks portions of the question back.  The
+            # output is stilted and awkward, so commented out.
+            # response = "%s %s %s" % (input_interpretation, verb, result)
+            response = result
+            
             self.speak(response)
             return True
         else:
