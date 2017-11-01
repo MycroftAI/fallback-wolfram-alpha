@@ -1,0 +1,19 @@
+{
+  "identifier": "WolframAlphaSkill",
+  "name": "Wolfram|Alpha",
+  "skillMetadata": {
+      "sections": [
+          {
+              "name": "Wolfram API",
+              "fields": [
+                  {
+                      "name": "api_key",
+                      "type": "text",
+                      "label": "AppID",
+                      "value": ""
+                  }
+              ]
+          }
+      ]
+  }
+}
