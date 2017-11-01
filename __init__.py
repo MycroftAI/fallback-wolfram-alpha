@@ -78,6 +78,7 @@ class WolframAlphaSkill(FallbackSkill):
 
         # Support 'api_key' in the old mycroft.conf location
         self.api_key = self.config.get('api_key')
+        self.has_had_key_notification = False
 
         # TODO: Localization support for questions in other languages
         self.question_parser = EnglishQuestionParser()
@@ -91,8 +92,12 @@ class WolframAlphaSkill(FallbackSkill):
             self.api_key = self.settings.get('api_key', None)
         if not self.api_key:
             # still not found, prompt user to get a key
-            self.speak_dialog("need.api.key")
-            return
+            if not self.has_had_key_notification:
+                self.has_had_key_notification = True
+                self.speak_dialog("need.api.key")
+                return True  # consume this fallback request
+            else:
+                return False  # allow other fallbacks to happen
 
         utt = message.data.get('utterance')
         LOG.debug("WolframAlpha fallback attempt: " + utt)
