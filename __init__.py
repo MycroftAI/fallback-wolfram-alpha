@@ -86,13 +86,13 @@ class WolframAlphaSkill(FallbackSkill):
         self.register_fallback(self.handle_fallback, 8)
 
     def handle_fallback(self, message):
-        if not self.api_key:
+        if not self.api_key and 'api_key' in self.settings:
             # attempt to get from webUI
             self.api_key = self.settings['api_key']
-            if not self.api_key:
-                # still not found, prompt user to get a key
-                self.speak_dialog("need.api.key")
-                return
+        if not self.api_key:
+            # still not found, prompt user to get a key
+            self.speak_dialog("need.api.key")
+            return
 
         utt = message.data.get('utterance')
         LOG.debug("WolframAlpha fallback attempt: " + utt)
@@ -151,7 +151,7 @@ class WolframAlphaSkill(FallbackSkill):
                 str = re.sub("\(.*\)", "", str)
 
                 if str == "":
-                    return False;
+                    return False
                 else:
                     self.speak(str)
                     return True
