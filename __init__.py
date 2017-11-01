@@ -86,9 +86,9 @@ class WolframAlphaSkill(FallbackSkill):
         self.register_fallback(self.handle_fallback, 8)
 
     def handle_fallback(self, message):
-        if not self.api_key and 'api_key' in self.settings:
+        if not self.api_key:
             # attempt to get from webUI
-            self.api_key = self.settings['api_key']
+            self.api_key = self.settings.get('api_key', None)
         if not self.api_key:
             # still not found, prompt user to get a key
             self.speak_dialog("need.api.key")
