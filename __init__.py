@@ -1,21 +1,17 @@
-# Copyright 2016 Mycroft AI, Inc.
+# Copyright 2017 Mycroft AI Inc.
 #
-# This file is part of Mycroft Core.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-# Mycroft Core is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+#    http://www.apache.org/licenses/LICENSE-2.0
 #
-# Mycroft Core is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 #
-# You should have received a copy of the GNU General Public License
-# along with Mycroft Core.  If not, see <http://www.gnu.org/licenses/>.
-
-
 from StringIO import StringIO
 
 import re
@@ -23,15 +19,11 @@ import wolframalpha
 from os.path import dirname, join
 from requests import HTTPError
 
+from adapt.intent import IntentBuilder
 from mycroft.api import Api
 from mycroft.messagebus.message import Message
-from mycroft.skills.core import FallbackSkill
-from mycroft.util.log import getLogger
+from mycroft.skills.core import FallbackSkill, intent_handler
 from mycroft.util.parse import normalize
-
-__author__ = 'seanfitz'
-
-LOG = getLogger(__name__)
 
 
 class EnglishQuestionParser(object):
@@ -42,10 +34,15 @@ class EnglishQuestionParser(object):
 
     def __init__(self):
         self.regexes = [
+            # Match things like:
+            #    * when X was Y, e.g. "tell me when america was founded"
+            #    how X is Y, e.g. "how tall is mount everest"
             re.compile(
                 ".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
                 "(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
                 "(?P<Query2>.*)"),
+            # Match:
+            #    how X Y, e.g. "how do crickets chirp"
             re.compile(
                 ".*(?P<QuestionWord>who|what|when|where|why|which|how) "
                 "(?P<QuestionVerb>\w+) (?P<Query>.*)")
@@ -55,6 +52,7 @@ class EnglishQuestionParser(object):
         if 'Query' in groupdict:
             return groupdict
         elif 'Query1' and 'Query2' in groupdict:
+            # Join the two parts into a single 'Query'
             return {
                 'QuestionWord': groupdict.get('QuestionWord'),
                 'QuestionVerb': groupdict.get('QuestionVerb'),
@@ -90,17 +88,27 @@ class WolframAlphaSkill(FallbackSkill):
         FallbackSkill.__init__(self, name="WolframAlphaSkill")
         self.__init_client()
         self.question_parser = EnglishQuestionParser()
+        self.last_query = None
+        self.last_answer = None
 
     def __init_client(self):
-        key = self.config.get('api_key')
-        if key and not self.config.get('proxy'):
-            self.client = wolframalpha.Client(key)
+        # TODO: Storing skill-specific settings in mycroft.conf is deprecated.
+        # Should be stored in the skill's local settings.json instead.
+        appID = self.config.get('api_key')
+        if not appID:
+            # Attempt to get an AppID skill settings instead (normally this
+            # doesn't exist, but privacy-conscious might want to do this)
+            appID = self.settings.get('appID', None)
+
+        if appID and not self.config.get('proxy'):
+            # user has a private AppID
+            self.client = wolframalpha.Client(appID)
         else:
+            # use the default API for Wolfram queries
             self.client = WAApi()
 
     def initialize(self):
-        self.init_dialog(dirname(__file__))
-        self.register_fallback(self.handle_fallback, 8)
+        self.register_fallback(self.handle_fallback, 10)
 
     def get_result(self, res):
         try:
@@ -119,69 +127,55 @@ class WolframAlphaSkill(FallbackSkill):
             except:
                 return result
 
-    # TODO: Localization
     def handle_fallback(self, message):
         utt = message.data.get('utterance')
-        LOG.debug("WolframAlpha fallback attempt: " + utt)
+        self.log.debug("WolframAlpha fallback attempt: " + utt)
         lang = message.data.get('lang')
         if not lang:
             lang = "en-us"
 
-        utterance = normalize(utt, lang)
+        # TODO: Localization.  Wolfram only allows queries in English,
+        #       so perhaps autotranslation or other languages?  That
+        #       would also involve auto-translation of the result,
+        #       which is a lot of room for introducting translation
+        #       issues.
+
+        utterance = normalize(utt, lang, remove_articles=False)
         parsed_question = self.question_parser.parse(utterance)
 
         query = utterance
-        others = []
         if parsed_question:
             # Try to store pieces of utterance (None if not parsed_question)
             utt_word = parsed_question.get('QuestionWord')
             utt_verb = parsed_question.get('QuestionVerb')
             utt_query = parsed_question.get('Query')
-            if utt_verb == "'s":
-                utt_verb = 'is'
-                parsed_question['QuestionVerb'] = 'is'
             query = "%s %s %s" % (utt_word, utt_verb, utt_query)
             phrase = "know %s %s %s" % (utt_word, utt_query, utt_verb)
-            LOG.debug("Falling back to WolframAlpha: " + query)
+            self.log.debug("Querying WolframAlpha: " + query)
         else:
             # This utterance doesn't look like a question, don't waste
             # time with WolframAlpha.
-
-            # TODO: Log missed intent
-            LOG.debug("Unknown intent: " + utterance)
+            self.log.debug("Non-question, ignoring: " + utterance)
             return False
 
         try:
             self.enclosure.mouth_think()
             res = self.client.query(query)
             result = self.get_result(res)
-            if result is None:
-                others = self._find_did_you_mean(res)
         except HTTPError as e:
             if e.response.status_code == 401:
                 self.emitter.emit(Message("mycroft.not.paired"))
             return True
         except Exception as e:
-            LOG.exception(e)
+            self.log.exception(e)
             return False
 
         if result:
-            input_interpretation = self.__find_pod_id(res.pods, 'Input')
-            verb = "is"
-            structured_syntax_regex = re.compile(".*(\||\[|\\\\|\]).*")
-            if parsed_question:
-                if not input_interpretation or structured_syntax_regex.match(
-                        input_interpretation):
-                    input_interpretation = parsed_question.get('Query')
-                verb = parsed_question.get('QuestionVerb')
+            response = self.process_wolfram_string(result)
 
-            if "|" in result:  # Assuming "|" indicates a list of items
-                verb = ":"
-
-            result = self.process_wolfram_string(result)
-            input_interpretation = \
-                self.process_wolfram_string(input_interpretation)
-            response = "%s %s %s" % (input_interpretation, verb, result)
+            # remember for any later 'source' request
+            self.last_query = query
+            self.last_answer = response
 
             self.speak(response)
             return True
@@ -196,6 +190,9 @@ class WolframAlphaSkill(FallbackSkill):
 
     @staticmethod
     def __find_pod_id(pods, pod_id):
+        # Wolfram returns results in "pods".  This searches a result
+        # structure for a specific pod ID.
+        # See https://products.wolframalpha.com/api/documentation/
         for pod in pods:
             if pod_id in pod.id:
                 return pod.text
@@ -207,15 +204,6 @@ class WolframAlphaSkill(FallbackSkill):
             if pod.node.attrib['position'] == pod_num:
                 return pod.text
         return None
-
-    @staticmethod
-    def _find_did_you_mean(res):
-        value = []
-        root = res.tree.find('didyoumeans')
-        if root is not None:
-            for result in root:
-                value.append(result.text)
-        return value
 
     def process_wolfram_string(self, text):
         # Remove extra whitespace
@@ -240,12 +228,24 @@ class WolframAlphaSkill(FallbackSkill):
 
         return text
 
+    @intent_handler(IntentBuilder("Info").require("Give").require("Source"))
+    def handle_get_sources(self, message):
+        if (self.last_query):
+            # Send an email to the account this device is registered to
+            data = {"query": self.last_query,
+                    "answer": self.last_answer,
+                    "url_query": self.last_query.replace(" ", "+")}
+
+            self.send_email(self.__translate("email.subject", data),
+                            self.__translate("email.body", data))
+            self.speak_dialog("sent.email")
+
     def shutdown(self):
         self.remove_fallback(self.handle_fallback)
         super(WolframAlphaSkill, self).shutdown()
 
-    def stop(self):
-        pass
+    def __translate(self, template, data=None):
+        return self.dialog_renderer.render(template, data)
 
 
 def create_skill():
