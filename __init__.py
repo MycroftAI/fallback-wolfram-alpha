@@ -75,8 +75,8 @@ class WAApi(Api):
     def get_data(self, response):
         return response
 
-    def query(self, input):
-        data = self.request({"query": {"input": input}})
+    def query(self, input, params=()):
+        data = self.request({"query": {"input": input, "params": params}})
         return wolframalpha.Result(StringIO(data.content))
 
 
@@ -102,9 +102,11 @@ class WolframAlphaSkill(FallbackSkill):
 
         if appID and not self.config.get('proxy'):
             # user has a private AppID
+            self.log.debug("Creating a private client")
             self.client = wolframalpha.Client(appID)
         else:
             # use the default API for Wolfram queries
+            self.log.debug("Using the default API")
             self.client = WAApi()
 
     def initialize(self):
@@ -148,8 +150,9 @@ class WolframAlphaSkill(FallbackSkill):
             # Try to store pieces of utterance (None if not parsed_question)
             utt_word = parsed_question.get('QuestionWord')
             utt_verb = parsed_question.get('QuestionVerb')
-            utt_query = parsed_question.get('Query')
-            query = "%s %s %s" % (utt_word, utt_verb, utt_query)
+            utt_query = parsed_question.get('Query')        
+            
+            query = "%s %s %s" % (utt_word, utt_verb, utt_query)           
             phrase = "know %s %s %s" % (utt_word, utt_query, utt_verb)
             self.log.debug("Querying WolframAlpha: " + query)
         else:
@@ -159,8 +162,41 @@ class WolframAlphaSkill(FallbackSkill):
             return False
 
         try:
+            # Make several assumptions based on the user settings
+            params = ()
+            
+            # TODO ask user if he/she wants location forwarded => settings
+            if self.config.get("forward_location"):
+            
+                latlong = self.config_core.get('location')['coordinate']
+                params += (
+                    ('latlong', str(latlong['latitude'])+ "," + str(latlong['longitude'])),
+                )
+            
+            # Based on the setting for the date format, assume certain things
+            if self.config_core.get('date_format') == 'MDY':
+                params += (('assumption', 'DateOrder_**Month.Day.Year--'),)
+            else:
+                params += (('assumption', 'DateOrder_**Day.Month.Year--'),)
+            
+            # line to get the current settings for preferred units
+            # can be metric or imperial
+            # => ask wolfram alpha to convert the output 
+            #    to the preferred unit system
+            # based on self.config_core.get('system_unit')
+            if self.config_core.get('system_unit') == 'imperial':
+                params += (
+                    ('units', 'nonmetric'),
+                )
+            else:
+                params += (
+                    ('units', 'metric'),
+                )
+        
             self.enclosure.mouth_think()
-            res = self.client.query(query)
+            # Params thus get ignored if  using the official API (by now)
+            # but should be considered when delivering an appId
+            res = self.client.query(query, params)
             result = self.get_result(res)
         except HTTPError as e:
             if e.response.status_code == 401:
