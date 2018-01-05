@@ -1,0 +1,31 @@
+{
+  "identifier": "WolframAlphaSkill",
+  "name": "WolframAlpha",
+  "skillMetadata": {
+      "sections": [
+          {
+              "name": "Login",
+              "fields": [
+                  {
+                      "name": "api_key",
+                      "type": "text",
+                      "label": "own appID",
+                      "value": ""
+                  },
+                  {
+                      "name": "proxy",
+                      "type": "bool",
+                      "label": "Use mycroft proxy instead of own appID",
+                      "value": "true"
+                  },
+                  {
+                      "name": "forward_location",
+                      "type": "bool",
+                      "label": "forward location to WolframAlpha",
+                      "value": "false"
+                  }
+              ]
+          }
+      ]
+  }
+}
