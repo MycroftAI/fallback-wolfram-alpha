@@ -10,6 +10,20 @@ For deeper exploration, you can also request the sources behind the answer.
 An email will be sent to your registered account linking you to all the
 details within Wolfram Alpha's website.
 
+## Configuration
+
+Add a block to your `~/.mycroft/mycroft.conf` file like this:
+
+```
+  "WolframAlphaSkill": {
+    "api_key": "yoursuperscretetAppID",
+    # to make use of your api key turn proxy off
+    "proxy": true, 
+    # Turn on to improve answers based on current location
+    "forward_location": false
+  }
+```
+
 ## Examples 
 * "How tall is Mount Everest?"
 * "When was The Rocky Horror Picture Show released?"
