@@ -180,13 +180,7 @@ class WolframAlphaSkill(FallbackSkill):
             self.speak(response)
             return True
         else:
-            if len(others) > 0:
-                self.speak_dialog('others.found',
-                                  data={'utterance': utterance,
-                                        'alternative': others[0]})
-                return True
-            else:
-                return False
+            return False
 
     @staticmethod
     def __find_pod_id(pods, pod_id):
