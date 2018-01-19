@@ -224,7 +224,7 @@ class WolframAlphaSkill(FallbackSkill):
 
     @intent_handler(IntentBuilder("Info").require("Give").require("Source"))
     def handle_get_sources(self, message):
-        if (self.last_query):
+        if self.last_query:
             # Send an email to the account this device is registered to
             data = {"query": self.last_query,
                     "answer": self.last_answer,
@@ -233,6 +233,8 @@ class WolframAlphaSkill(FallbackSkill):
             self.send_email(self.__translate("email.subject", data),
                             self.__translate("email.body", data))
             self.speak_dialog("sent.email")
+        else:
+            self.speak_dialog("no.info.to.send")
 
     def shutdown(self):
         self.remove_fallback(self.handle_fallback)
