@@ -14,13 +14,13 @@
                   },
                   {
                       "name": "proxy",
-                      "type": "bool",
+                      "type": "checkbox",
                       "label": "Use mycroft proxy instead of own appID",
                       "value": "true"
                   },
                   {
                       "name": "forward_location",
-                      "type": "bool",
+                      "type": "checkbox",
                       "label": "forward location to WolframAlpha",
                       "value": "false"
                   }
