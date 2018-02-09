@@ -18,6 +18,7 @@ import re
 import wolframalpha
 from os.path import dirname, join
 from requests import HTTPError
+import ssl
 
 from adapt.intent import IntentBuilder
 from mycroft.api import Api
@@ -92,15 +93,11 @@ class WolframAlphaSkill(FallbackSkill):
         self.last_answer = None
 
     def __init_client(self):
-        # TODO: Storing skill-specific settings in mycroft.conf is deprecated.
-        # Should be stored in the skill's local settings.json instead.
-        appID = self.config.get('api_key')
-        if not appID:
-            # Attempt to get an AppID skill settings instead (normally this
-            # doesn't exist, but privacy-conscious might want to do this)
-            appID = self.settings.get('appID', None)
+        # Attempt to get an AppID skill settings instead (normally this
+        # doesn't exist, but privacy-conscious might want to do this)
+        appID = self.settings.get('api_key', None)
 
-        if appID and not self.config.get('proxy'):
+        if appID and self.settings.get('proxy') == "false":
             # user has a private AppID
             self.log.debug("Creating a private client")
             self.client = wolframalpha.Client(appID)
@@ -165,8 +162,8 @@ class WolframAlphaSkill(FallbackSkill):
             # Make several assumptions based on the user settings
             params = ()
             
-            # TODO ask user if he/she wants location forwarded => settings
-            if self.config.get("forward_location"):
+            # ask user if he/she wants location forwarded => settings
+            if self.settings.get("forward_location") == "true":
             
                 latlong = self.config_core.get('location')['coordinate']
                 params += (
@@ -195,13 +192,14 @@ class WolframAlphaSkill(FallbackSkill):
         
             self.enclosure.mouth_think()
             # Params thus get ignored if  using the official API (by now)
-            # but should be considered when delivering an appId
+            # but will be considered when having delivering an appId
             res = self.client.query(query, params)
             result = self.get_result(res)
         except HTTPError as e:
             if e.response.status_code == 401:
                 self.emitter.emit(Message("mycroft.not.paired"))
             return True
+        # except SSLError as e: why is there a read error happening
         except Exception as e:
             self.log.exception(e)
             return False
