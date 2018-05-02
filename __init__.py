@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-from StringIO import StringIO
 
+import sys
 import re
 import wolframalpha
 from os.path import dirname, join
@@ -24,6 +24,11 @@ from mycroft.api import Api
 from mycroft.messagebus.message import Message
 from mycroft.skills.core import FallbackSkill, intent_handler
 from mycroft.util.parse import normalize
+
+if sys.version_info[0] < 3:
+    from StringIO import StringIO
+else:
+    from io import BytesIO
 
 
 class EnglishQuestionParser(object):
@@ -77,7 +82,10 @@ class WAApi(Api):
 
     def query(self, input):
         data = self.request({"query": {"input": input}})
-        return wolframalpha.Result(StringIO(data.content))
+        if sys.version_info[0] < 3:
+            return wolframalpha.Result(StringIO(data.content))
+        else:
+            return wolframalpha.Result(BytesIO(data.content))
 
 
 class WolframAlphaSkill(FallbackSkill):
