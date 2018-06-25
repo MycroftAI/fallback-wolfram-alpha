@@ -18,7 +18,6 @@ import re
 import wolframalpha
 from os.path import dirname, join
 from requests import HTTPError
-import ssl
 
 from adapt.intent import IntentBuilder
 from mycroft.api import Api
@@ -26,7 +25,7 @@ from mycroft.messagebus.message import Message
 from mycroft.skills.core import FallbackSkill, intent_handler
 from mycroft.util.parse import normalize
 from mtranslate import translate
-from mycroft.util.lang.format_de import nice_response
+from mycroft.util.lang.format_de import nice_response_de
 
 if sys.version_info[0] < 3:
     from StringIO import StringIO
@@ -41,25 +40,50 @@ class EnglishQuestionParser(object):
     """
 
     def __init__(self):
-        self.regexes = [
-            # Match things like:
-            #    * when X was Y, e.g. "tell me when america was founded"
-            #    how X is Y, e.g. "how tall is mount everest"
-            re.compile(
-                ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie|wessen) "
-                "(?P<QuestionVerb>ist|sind|war|waren) "
-                "(?P<Query>.*)"),
-            # Match:
-            #    how X Y, e.g. "how do crickets chirp"
-            re.compile(
-                ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie) "
-                "(?P<Query>.*)")
-        ]
+        if self.lang == "de-de":
+            self.regexes = [
+                # Match things like:
+                #    * wie X ist Y, e.g. "wie hoch ist Mount Everest"
+                #    [how X is Y, e.g. "how tall is mount everest"]
+                re.compile(
+                    ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie"
+                    "|wem|wessen) "
+                    "(?P<Query1>.*) (?P<QuestionVerb>ist|sind|war|waren) "
+                    "(?P<Query2>.*)"),
+                # Match:
+                #    wie X Y, e.g. "wie zirpen Grillen"
+                #    how X Y, e.g. "how do crickets chirp"
+                re.compile(
+                    ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie) "
+                    "(?P<QuestionVerb>\w+) (?P<Query>.*)")
+            ]
+        else:
+            self.regexes = [
+                # Match things like:
+                #    * when X was Y, e.g. "tell me when america was founded"
+                #    how X is Y, e.g. "how tall is mount everest"
+                re.compile(
+                    ".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
+                    "(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
+                    "(?P<Query2>.*)"),
+                # Match:
+                #    how X Y, e.g. "how do crickets chirp"
+                re.compile(
+                    ".*(?P<QuestionWord>who|what|when|where|why|which|how) "
+                    "(?P<QuestionVerb>\w+) (?P<Query>.*)")
+            ]
 
     def _normalize(self, groupdict):
         if 'Query' in groupdict:
             return groupdict
-            
+        elif 'Query1' and 'Query2' in groupdict:
+            # Join the two parts into a single 'Query'
+            return {
+                'QuestionWord': groupdict.get('QuestionWord'),
+                'QuestionVerb': groupdict.get('QuestionVerb'),
+                'Query': ' '.join([groupdict.get('Query1'), groupdict.get(
+                    'Query2')])
+            }
 
     def parse(self, utterance):
         for regex in self.regexes:
@@ -77,7 +101,7 @@ class WAApi(Api):
         return response
 
     def query(self, input, params =()):
-        data = self.request({"query": {"input": input, "params": params}})
+        data = self.request({"query": {"input": input}})
         if sys.version_info[0] < 3:
             return wolframalpha.Result(StringIO(data.content))
         else:
@@ -103,10 +127,13 @@ class WolframAlphaSkill(FallbackSkill):
 
         if appID and self.settings.get('proxy') == "false":
             # user has a private AppID
+            self.log.debug("Creating a private client")
             self.client = wolframalpha.Client(appID)
         else:
             # use the default API for Wolfram queries
+            self.log.debug("Using the default API")
             self.client = WAApi()
+
 
     def initialize(self):
         self.register_fallback(self.handle_fallback, 90)
@@ -132,10 +159,14 @@ class WolframAlphaSkill(FallbackSkill):
     def handle_fallback(self, message):
         utt = message.data.get('utterance')
         self.log.debug("WolframAlpha fallback attempt: " + utt)
-        lang = message.data.get('lang')
-        if not lang:
-            lang = "de-de"
 
+        # if language is set "de-de" translate
+        if self.lang == "de-de":
+            lang = self.lang
+        else:
+            lang = message.data.get('lang')
+            if not lang:
+                lang = "en-us"
 
         utterance = normalize(utt, lang, remove_articles=False)
         parsed_question = self.question_parser.parse(utterance)
@@ -143,11 +174,19 @@ class WolframAlphaSkill(FallbackSkill):
         query = utterance
         if parsed_question:
             # Try to store pieces of utterance (None if not parsed_question)
+            utt_word = parsed_question.get('QuestionWord')
+            utt_verb = parsed_question.get('QuestionVerb')
             utt_query = parsed_question.get('Query')
-            #self.log.debug("Querying WolframAlpha original: " + utt_query)
-            query = "%s" % translate(utt_query, "en", "de")
-            phrase = "know %s" % (query)
-            self.log.debug("Querying WolframAlpha translated: " + query)
+            query = "%s %s %s" % (utt_word, utt_verb, utt_query)
+            if lang == "de-de":
+                #translate the query from German to English
+                self.log.debug("Query original in DE: " + query)
+                query = translate(query, "en", "de")
+                self.log.debug("Querying WolframAlpha in EN: " + query)
+                phrase = "know %s" % query
+            else
+                phrase = "know %s %s %s" % (utt_word, utt_query, utt_verb)
+                self.log.debug("Querying WolframAlpha: " + query)
         else:
             # This utterance doesn't look like a question, don't waste
             # time with WolframAlpha.
@@ -156,7 +195,7 @@ class WolframAlphaSkill(FallbackSkill):
 
         try:
             self.enclosure.mouth_think()
-            res = self.client.query(query, params=("units", "metric"))
+            res = self.client.query(query)
             result = self.get_result(res)
         except HTTPError as e:
             if e.response.status_code == 401:
@@ -168,14 +207,20 @@ class WolframAlphaSkill(FallbackSkill):
 
         if result:
             response = self.process_wolfram_string(result)
-            self.log.debug("Result WolframAlpha original: " + response)
-            if not response.isnumeric():
-                response = translate(response, "de", "en")
+
+            if lang == "de-de":
+                self.log.debug("Result WolframAlpha original in EN: " +
+                               response)
+                if not response.isnumeric():
+                    response = translate(response, "de", "en")
+                    response = nice_response_de(response)
+                self.log.debug("Result WolframAlpha translated into DE: " +
+                               response)
 
             # remember for any later 'source' request
             self.last_query = query
             self.last_answer = response
-            response = nice_response(response)
+
             self.speak(response)
             return True
         else:
