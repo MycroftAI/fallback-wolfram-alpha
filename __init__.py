@@ -18,12 +18,15 @@ import re
 import wolframalpha
 from os.path import dirname, join
 from requests import HTTPError
+import ssl
 
 from adapt.intent import IntentBuilder
 from mycroft.api import Api
 from mycroft.messagebus.message import Message
 from mycroft.skills.core import FallbackSkill, intent_handler
 from mycroft.util.parse import normalize
+from mtranslate import translate
+from mycroft.util.lang.format_de import nice_response
 
 if sys.version_info[0] < 3:
     from StringIO import StringIO
@@ -43,27 +46,20 @@ class EnglishQuestionParser(object):
             #    * when X was Y, e.g. "tell me when america was founded"
             #    how X is Y, e.g. "how tall is mount everest"
             re.compile(
-                ".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
-                "(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
-                "(?P<Query2>.*)"),
+                ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie|wessen) "
+                "(?P<QuestionVerb>ist|sind|war|waren) "
+                "(?P<Query>.*)"),
             # Match:
             #    how X Y, e.g. "how do crickets chirp"
             re.compile(
-                ".*(?P<QuestionWord>who|what|when|where|why|which|how) "
-                "(?P<QuestionVerb>\w+) (?P<Query>.*)")
+                ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie) "
+                "(?P<Query>.*)")
         ]
 
     def _normalize(self, groupdict):
         if 'Query' in groupdict:
             return groupdict
-        elif 'Query1' and 'Query2' in groupdict:
-            # Join the two parts into a single 'Query'
-            return {
-                'QuestionWord': groupdict.get('QuestionWord'),
-                'QuestionVerb': groupdict.get('QuestionVerb'),
-                'Query': ' '.join([groupdict.get('Query1'), groupdict.get(
-                    'Query2')])
-            }
+            
 
     def parse(self, utterance):
         for regex in self.regexes:
@@ -80,8 +76,8 @@ class WAApi(Api):
     def get_data(self, response):
         return response
 
-    def query(self, input):
-        data = self.request({"query": {"input": input}})
+    def query(self, input, params =()):
+        data = self.request({"query": {"input": input, "params": params}})
         if sys.version_info[0] < 3:
             return wolframalpha.Result(StringIO(data.content))
         else:
@@ -100,15 +96,12 @@ class WolframAlphaSkill(FallbackSkill):
         self.last_answer = None
 
     def __init_client(self):
-        # TODO: Storing skill-specific settings in mycroft.conf is deprecated.
-        # Should be stored in the skill's local settings.json instead.
-        appID = self.config.get('api_key')
-        if not appID:
-            # Attempt to get an AppID skill settings instead (normally this
-            # doesn't exist, but privacy-conscious might want to do this)
-            appID = self.settings.get('appID', None)
 
-        if appID and not self.config.get('proxy'):
+        # Attempt to get an AppID skill settings instead (normally this
+        # doesn't exist, but privacy-conscious might want to do this)
+        appID = self.settings.get('api_key', None)
+
+        if appID and self.settings.get('proxy') == "false":
             # user has a private AppID
             self.client = wolframalpha.Client(appID)
         else:
@@ -116,7 +109,7 @@ class WolframAlphaSkill(FallbackSkill):
             self.client = WAApi()
 
     def initialize(self):
-        self.register_fallback(self.handle_fallback, 10)
+        self.register_fallback(self.handle_fallback, 90)
 
     def get_result(self, res):
         try:
@@ -127,7 +120,8 @@ class WolframAlphaSkill(FallbackSkill):
                 for pid in self.PIDS:
                     result = self.__find_pod_id(res.pods, pid)
                     if result:
-                        result = result[:5]
+                        #result = result[:5]
+                        result = result.splitlines()[0]
                         break
                 if not result:
                     result = self.__find_num(res.pods, '200')
@@ -140,13 +134,8 @@ class WolframAlphaSkill(FallbackSkill):
         self.log.debug("WolframAlpha fallback attempt: " + utt)
         lang = message.data.get('lang')
         if not lang:
-            lang = "en-us"
+            lang = "de-de"
 
-        # TODO: Localization.  Wolfram only allows queries in English,
-        #       so perhaps autotranslation or other languages?  That
-        #       would also involve auto-translation of the result,
-        #       which is a lot of room for introducting translation
-        #       issues.
 
         utterance = normalize(utt, lang, remove_articles=False)
         parsed_question = self.question_parser.parse(utterance)
@@ -154,12 +143,11 @@ class WolframAlphaSkill(FallbackSkill):
         query = utterance
         if parsed_question:
             # Try to store pieces of utterance (None if not parsed_question)
-            utt_word = parsed_question.get('QuestionWord')
-            utt_verb = parsed_question.get('QuestionVerb')
             utt_query = parsed_question.get('Query')
-            query = "%s %s %s" % (utt_word, utt_verb, utt_query)
-            phrase = "know %s %s %s" % (utt_word, utt_query, utt_verb)
-            self.log.debug("Querying WolframAlpha: " + query)
+            #self.log.debug("Querying WolframAlpha original: " + utt_query)
+            query = "%s" % translate(utt_query, "en", "de")
+            phrase = "know %s" % (query)
+            self.log.debug("Querying WolframAlpha translated: " + query)
         else:
             # This utterance doesn't look like a question, don't waste
             # time with WolframAlpha.
@@ -168,7 +156,7 @@ class WolframAlphaSkill(FallbackSkill):
 
         try:
             self.enclosure.mouth_think()
-            res = self.client.query(query)
+            res = self.client.query(query, params=("units", "metric"))
             result = self.get_result(res)
         except HTTPError as e:
             if e.response.status_code == 401:
@@ -180,11 +168,14 @@ class WolframAlphaSkill(FallbackSkill):
 
         if result:
             response = self.process_wolfram_string(result)
+            self.log.debug("Result WolframAlpha original: " + response)
+            if not response.isnumeric():
+                response = translate(response, "de", "en")
 
             # remember for any later 'source' request
             self.last_query = query
             self.last_answer = response
-
+            response = nice_response(response)
             self.speak(response)
             return True
         else:
