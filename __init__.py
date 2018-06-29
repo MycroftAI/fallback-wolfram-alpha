@@ -38,40 +38,66 @@ class EnglishQuestionParser(object):
     Poor-man's english question parser. Not even close to conclusive, but
     appears to construct some decent w|a queries and responses.
     """
+    def __init__(self):
+        self.regexes = [
+            # Match things like:
+            #    * when X was Y, e.g. "tell me when america was founded"
+            #    how X is Y, e.g. "how tall is mount everest"
+            re.compile(
+                ".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
+                "(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
+                "(?P<Query2>.*)"),
+            # Match:
+            #    how X Y, e.g. "how do crickets chirp"
+            re.compile(
+                ".*(?P<QuestionWord>who|what|when|where|why|which|how) "
+                "(?P<QuestionVerb>\w+) (?P<Query>.*)")
+        ]
+
+    def _normalize(self, groupdict):
+        if 'Query' in groupdict:
+            return groupdict
+        elif 'Query1' and 'Query2' in groupdict:
+            # Join the two parts into a single 'Query'
+            return {
+                'QuestionWord': groupdict.get('QuestionWord'),
+                'QuestionVerb': groupdict.get('QuestionVerb'),
+                'Query': ' '.join([groupdict.get('Query1'), groupdict.get(
+                    'Query2')])
+            }
+
+    def parse(self, utterance):
+        for regex in self.regexes:
+            match = regex.match(utterance)
+            if match:
+                return self._normalize(match.groupdict())
+        return None
+
+
+class GermanQuestionParser(object):
+    """
+    Poor-man's german question parser. Not even close to conclusive, but
+    appears to construct some decent w|a queries and responses.
+    """
 
     def __init__(self):
-        if self.lang == "de-de":
-            self.regexes = [
-                # Match things like:
-                #    * wie X ist Y, e.g. "wie hoch ist Mount Everest"
-                #    [how X is Y, e.g. "how tall is mount everest"]
-                re.compile(
-                    ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie"
-                    "|wem|wessen) "
-                    "(?P<Query1>.*) (?P<QuestionVerb>ist|sind|war|waren) "
-                    "(?P<Query2>.*)"),
-                # Match:
-                #    wie X Y, e.g. "wie zirpen Grillen"
-                #    how X Y, e.g. "how do crickets chirp"
-                re.compile(
-                    ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie) "
-                    "(?P<QuestionVerb>\w+) (?P<Query>.*)")
-            ]
-        else:
-            self.regexes = [
-                # Match things like:
-                #    * when X was Y, e.g. "tell me when america was founded"
-                #    how X is Y, e.g. "how tall is mount everest"
-                re.compile(
-                    ".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
-                    "(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
-                    "(?P<Query2>.*)"),
-                # Match:
-                #    how X Y, e.g. "how do crickets chirp"
-                re.compile(
-                    ".*(?P<QuestionWord>who|what|when|where|why|which|how) "
-                    "(?P<QuestionVerb>\w+) (?P<Query>.*)")
-            ]
+
+        self.regexes = [
+            # Match things like:
+            #    * wie X ist Y, e.g. "wie lang ist der Rhein"
+            #    [how X is Y, e.g. "how long is the Rhine"]
+            re.compile(
+                ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie"
+                "|wem|wessen) "
+                "(?P<Query1>.*) (?P<QuestionVerb>ist|sind|war|waren) "
+                "(?P<Query2>.*)"),
+            # Match:
+            #    wie X Y, e.g. "wie zirpen Grillen"
+            #    how X Y, e.g. "how do crickets chirp"
+            re.compile(
+                ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie) "
+                "(?P<QuestionVerb>\w+) (?P<Query>.*)")
+        ]
 
     def _normalize(self, groupdict):
         if 'Query' in groupdict:
@@ -100,7 +126,7 @@ class WAApi(Api):
     def get_data(self, response):
         return response
 
-    def query(self, input, params =()):
+    def query(self, input):
         data = self.request({"query": {"input": input}})
         if sys.version_info[0] < 3:
             return wolframalpha.Result(StringIO(data.content))
@@ -115,7 +141,10 @@ class WolframAlphaSkill(FallbackSkill):
     def __init__(self):
         FallbackSkill.__init__(self, name="WolframAlphaSkill")
         self.__init_client()
-        self.question_parser = EnglishQuestionParser()
+        if self.lang == "de-de":
+            self.question_parser = GermanQuestionParser()
+        else:
+            self.question_parser = EnglishQuestionParser()
         self.last_query = None
         self.last_answer = None
 
@@ -133,6 +162,15 @@ class WolframAlphaSkill(FallbackSkill):
             # use the default API for Wolfram queries
             self.log.debug("Using the default API")
             self.client = WAApi()
+
+    @staticmethod
+    def find_unit(result_pod, unit_to_find):
+        for pod in result_pod:
+            for sub in pod.subpods:
+                if sub["plaintext"] is not None and \
+                        unit_to_find in sub["plaintext"]:
+                    return sub["plaintext"]
+        return False
 
 
     def initialize(self):
@@ -183,9 +221,7 @@ class WolframAlphaSkill(FallbackSkill):
                 self.log.debug("Query original in DE: " + query)
                 query = translate(query, "en", "de")
                 self.log.debug("Querying WolframAlpha in EN: " + query)
-                phrase = "know %s" % query
-            else
-                phrase = "know %s %s %s" % (utt_word, utt_query, utt_verb)
+            else:
                 self.log.debug("Querying WolframAlpha: " + query)
         else:
             # This utterance doesn't look like a question, don't waste
@@ -205,15 +241,125 @@ class WolframAlphaSkill(FallbackSkill):
             self.log.exception(e)
             return False
 
+
+
+
         if result:
             response = self.process_wolfram_string(result)
 
             if lang == "de-de":
                 self.log.debug("Result WolframAlpha original in EN: " +
                                response)
+
+                if response[:1].isnumeric():
+                    # if response starts with a number then
+                    # check if response contains imperial units
+
+                    imperial_length_units = ["\'", "inch", "foot", "feet",
+                                             "yard",
+                                      "mile"]
+
+                    imperial_volume_units = ["pint", "quart", "gallon"]
+
+                    imperial_mass_units = ["ounce", "pound"]
+
+                    imperial_temperature_units = "Fahrenheit"
+
+                    imperial_units = [imperial_length_units,
+                                     imperial_volume_units,
+                                     imperial_mass_units,
+                                     imperial_temperature_units]
+
+                    metric_length_units = ["km", "kilometer", "meter", "cm"]
+
+                    metric_mass_units = ["gram", "kg"]
+
+                    metric_temperature_units = "celsius"
+
+                    metric_volume_units = "liter"
+
+
+
+                    metric_result = ""
+
+                    # if original response is feet, prefer meter over km
+                    if "feet" in response:
+                        metric_length_units.insert(0, " meter")
+
+                    metric_units = [metric_length_units, metric_mass_units,
+                                    metric_temperature_units,
+                                    metric_volume_units]
+
+                    # if imperial units are in the response then
+                    # find the first subpod with corresponding metric units
+
+                    for sub_list in imperial_units:
+                        if any(ext in response for ext in sub_list):
+                            for idx, inner_list in enumerate(imperial_units):
+                                for single_imperial_unit in inner_list:
+                                    if single_imperial_unit in response:
+                                    # find a subpod with a corresponding unit
+                                        for single_metric_unit in \
+                                            metric_units[idx]:
+                                            if self.find_unit(res.pods,
+                                                          single_metric_unit):
+                                                metric_result = \
+                                                self.find_unit(res.pods,
+                                                single_metric_unit)
+                                                break
+                                    if metric_result != "":
+                                        break
+                                if metric_result != "":
+                                    # w|a gives results repeating units
+                                    # such as "1 km ^ 2 (square kilometer)"
+                                    # remove everything from "("
+                                    start = metric_result.find('(')
+                                    response = metric_result[:start]
+
+                                    # remove commas
+                                    response = response.replace(",", "")
+                                    # replace decimal points with commas
+                                    response = response.replace(".", ",")
+
+                                    break
+
+                    if metric_result == "":
+
+                        try:
+                            # if response is a float
+                            float_response = float(response)
+
+                            # if more than 7 digits after the decimal point
+                            # round to five digits
+                            if round(float_response, 7) != float_response:
+                                response = str(round(float_response, 5)) + \
+                                           " gerundet auf 5 Nachkommastellen"
+
+
+                        # convert from US to German/international number format
+                        # US 10,000.3 is
+                        # 10.000,3 or 10000,3 in German format
+
+                            # remove commas
+                            response = response.replace(",", "")
+                            # replace decimal points with commas
+                            response = response.replace(".", ",")
+
+
+                        except ValueError:
+                            # response is not a float
+                            pass
+
+                # if response is numeric (whole number), don't translate
+                # else give to google to translate
                 if not response.isnumeric():
                     response = translate(response, "de", "en")
+
+                    # check for declension of ordinals before months
+                    # replace "^" with "hoch" (to the power of)
                     response = nice_response_de(response)
+
+
                 self.log.debug("Result WolframAlpha translated into DE: " +
                                response)
 
@@ -225,6 +371,8 @@ class WolframAlphaSkill(FallbackSkill):
             return True
         else:
             return False
+
+
 
     @staticmethod
     def __find_pod_id(pods, pod_id):
