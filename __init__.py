@@ -83,17 +83,6 @@ class GermanQuestionParser(object):
     def __init__(self):
 
         self.regexes = [
-            # Match things like:
-            #    * wie X ist Y, e.g. "wie lang ist der Rhein"
-            #    [how X is Y, e.g. "how long is the Rhine"]
-            re.compile(
-                ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie"
-                "|wem|wessen) "
-                "(?P<Query1>.*) (?P<QuestionVerb>ist|sind|war|waren) "
-                "(?P<Query2>.*)"),
-            # Match:
-            #    wie X Y, e.g. "wie zirpen Grillen"
-            #    how X Y, e.g. "how do crickets chirp"
             re.compile(
                 ".*(?P<QuestionWord>wer|wann|was|wo|warum|welche|wie) "
                 "(?P<QuestionVerb>\w+) (?P<Query>.*)")
@@ -102,14 +91,7 @@ class GermanQuestionParser(object):
     def _normalize(self, groupdict):
         if 'Query' in groupdict:
             return groupdict
-        elif 'Query1' and 'Query2' in groupdict:
-            # Join the two parts into a single 'Query'
-            return {
-                'QuestionWord': groupdict.get('QuestionWord'),
-                'QuestionVerb': groupdict.get('QuestionVerb'),
-                'Query': ' '.join([groupdict.get('Query1'), groupdict.get(
-                    'Query2')])
-            }
+
 
     def parse(self, utterance):
         for regex in self.regexes:
@@ -248,10 +230,13 @@ class WolframAlphaSkill(FallbackSkill):
             response = self.process_wolfram_string(result)
 
             if lang == "de-de":
+
+                is_float = False
+
                 self.log.debug("Result WolframAlpha original in EN: " +
                                response)
 
-                if response[:1].isnumeric():
+                if response[:1].isnumeric() and not response.isnumeric():
                     # if response starts with a number then
                     # check if response contains imperial units
 
@@ -263,28 +248,36 @@ class WolframAlphaSkill(FallbackSkill):
 
                     imperial_mass_units = ["ounce", "pound"]
 
-                    imperial_temperature_units = "Fahrenheit"
+                    imperial_temperature_units = ["fahrenheit",]
 
                     imperial_units = [imperial_length_units,
                                      imperial_volume_units,
                                      imperial_mass_units,
                                      imperial_temperature_units]
 
-                    metric_length_units = ["km", "kilometer", "meter", "cm"]
+                    metric_length_units = ["km", "kilometer",
+                                           "meter", "cm"]
 
                     metric_mass_units = ["gram", "kg"]
 
-                    metric_temperature_units = "celsius"
+                    metric_temperature_units = ["celsius",]
 
-                    metric_volume_units = "liter"
+                    metric_volume_units = ["liter",]
 
 
 
                     metric_result = ""
 
-                    # if original response is feet, prefer meter over km
+                    # if original response contains feet, prefer meter over km
                     if "feet" in response:
                         metric_length_units.insert(0, " meter")
+
+                    if "\'" in response[1:-1]:
+                        if "\"" in response[1:]:
+                            metric_length_units.insert(0, " cm")
+                        else:
+                            metric_length_units.insert(0, " meter")
+
 
                     metric_units = [metric_length_units, metric_mass_units,
                                     metric_temperature_units,
@@ -310,24 +303,31 @@ class WolframAlphaSkill(FallbackSkill):
                                     if metric_result != "":
                                         break
                                 if metric_result != "":
-                                    # w|a gives results repeating units
-                                    # such as "1 km ^ 2 (square kilometer)"
-                                    # remove everything from "("
-                                    start = metric_result.find('(')
-                                    response = metric_result[:start]
-
-                                    # remove commas
-                                    response = response.replace(",", "")
-                                    # replace decimal points with commas
-                                    response = response.replace(".", ",")
-
                                     break
+                        if metric_result != "":
+                            response = metric_result
+
+                            # remove commas
+                            response = response.replace(",", "")
+                            # replace decimal points with commas
+                            response = response.replace(".", ",")
+
+                            break
+
+                    # w|a gives results repeating units
+                    # such as "1 km ^ 2 (square kilometer)"
+                    # remove everything from "("
+                    start = response.find('(')
+                    if start > 0:
+                        response = response[:start]
 
                     if metric_result == "":
+
 
                         try:
                             # if response is a float
                             float_response = float(response)
+                            is_float = True
 
                             # if more than 7 digits after the decimal point
                             # round to five digits
@@ -350,9 +350,9 @@ class WolframAlphaSkill(FallbackSkill):
                             # response is not a float
                             pass
 
-                # if response is numeric (whole number), don't translate
+                # if response is numeric, don't translate
                 # else give to google to translate
-                if not response.isnumeric():
+                if not response.isnumeric() and not is_float:
                     response = translate(response, "de", "en")
 
                     # check for declension of ordinals before months
