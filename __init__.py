@@ -131,18 +131,19 @@ class WolframAlphaSkill(FallbackSkill):
         self.last_answer = None
 
     def __init_client(self):
+        # TODO: Storing skill-specific settings in mycroft.conf is deprecated.
+        # Should be stored in the skill's local settings.json instead.
+        appID = self.config.get('api_key')
+        if not appID:
+            # Attempt to get an AppID skill settings instead (normally this
+            # doesn't exist, but privacy-conscious might want to do this)
+            appID = self.settings.get('appID', None)
 
-        # Attempt to get an AppID skill settings instead (normally this
-        # doesn't exist, but privacy-conscious might want to do this)
-        appID = self.settings.get('api_key', None)
-
-        if appID and self.settings.get('proxy') == "false":
+        if appID and not self.config.get('proxy'):
             # user has a private AppID
-            self.log.debug("Creating a private client")
             self.client = wolframalpha.Client(appID)
         else:
             # use the default API for Wolfram queries
-            self.log.debug("Using the default API")
             self.client = WAApi()
 
     @staticmethod
@@ -371,8 +372,6 @@ class WolframAlphaSkill(FallbackSkill):
             return True
         else:
             return False
-
-
 
     @staticmethod
     def __find_pod_id(pods, pod_id):
