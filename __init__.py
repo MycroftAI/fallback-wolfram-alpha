@@ -157,7 +157,7 @@ class WolframAlphaSkill(FallbackSkill):
 
 
     def initialize(self):
-        self.register_fallback(self.handle_fallback, 90)
+        self.register_fallback(self.handle_fallback, 10)
 
     def get_result(self, res):
         try:
