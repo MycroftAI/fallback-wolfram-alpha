@@ -127,7 +127,10 @@ class WolframAlphaSkill(FallbackSkill):
                 for pid in self.PIDS:
                     result = self.__find_pod_id(res.pods, pid)
                     if result:
-                        result = result[:5]
+                        if pid.endswith(':PeopleData'):
+                            result = parse_people_data(result)
+                        else:
+                            result = result[:5]
                         break
                 if not result:
                     result = self.__find_num(res.pods, '200')
@@ -251,6 +254,13 @@ class WolframAlphaSkill(FallbackSkill):
     def __translate(self, template, data=None):
         return self.dialog_renderer.render(template, data)
 
+
+def parse_people_data(data):
+    """ Handle :PeopleData
+    Reduces the length of the returned data somewhat.
+    """
+    lines = data.split('\n')
+    return '. '.join(lines[:min(len(lines), 3)])
 
 def create_skill():
     return WolframAlphaSkill()
