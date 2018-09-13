@@ -43,14 +43,14 @@ class EnglishQuestionParser(object):
             #    * when X was Y, e.g. "tell me when america was founded"
             #    how X is Y, e.g. "how tall is mount everest"
             re.compile(
-                ".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
-                "(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
-                "(?P<Query2>.*)"),
+                r".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
+                r"(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
+                r"(?P<Query2>.*)"),
             # Match:
             #    how X Y, e.g. "how do crickets chirp"
             re.compile(
-                ".*(?P<QuestionWord>who|what|when|where|why|which|how) "
-                "(?P<QuestionVerb>\w+) (?P<Query>.*)")
+                r".*(?P<QuestionWord>who|what|when|where|why|which|how) "
+                r"(?P<QuestionVerb>\w+) (?P<Query>.*)")
         ]
 
     def _normalize(self, groupdict):
@@ -225,7 +225,7 @@ class WolframAlphaSkill(FallbackSkill):
 
         with open(join(dirname(__file__), 'regex',
                        self.lang, 'list.rx'), 'r') as regex:
-            list_regex = re.compile(regex.readline())
+            list_regex = re.compile(regex.readline().strip('\n'))
 
         match = list_regex.match(text)
         if match:
