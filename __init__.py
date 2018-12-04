@@ -13,22 +13,18 @@
 # limitations under the License.
 #
 
-import sys
 import re
 import wolframalpha
 from os.path import dirname, join
 from requests import HTTPError
+from io import BytesIO
 
 from adapt.intent import IntentBuilder
 from mycroft.api import Api
 from mycroft.messagebus.message import Message
-from mycroft.skills.core import FallbackSkill, intent_handler
+from mycroft.skills.core import intent_handler
+from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
 from mycroft.util.parse import normalize
-
-if sys.version_info[0] < 3:
-    from StringIO import StringIO
-else:
-    from io import BytesIO
 
 
 class EnglishQuestionParser(object):
@@ -82,18 +78,15 @@ class WAApi(Api):
 
     def query(self, input):
         data = self.request({"query": {"input": input}})
-        if sys.version_info[0] < 3:
-            return wolframalpha.Result(StringIO(data.content))
-        else:
-            return wolframalpha.Result(BytesIO(data.content))
+        return wolframalpha.Result(BytesIO(data.content))
 
 
-class WolframAlphaSkill(FallbackSkill):
+class WolframAlphaSkill(CommonQuerySkill):
     PIDS = ['Value', 'NotableFacts:PeopleData', 'BasicInformation:PeopleData',
             'Definition', 'DecimalApproximation']
 
     def __init__(self):
-        FallbackSkill.__init__(self, name="WolframAlphaSkill")
+        super().__init__()
         self.__init_client()
         self.question_parser = EnglishQuestionParser()
         self.last_query = None
@@ -116,7 +109,7 @@ class WolframAlphaSkill(FallbackSkill):
             self.client = WAApi()
 
     def initialize(self):
-        self.register_fallback(self.handle_fallback, 10)
+        pass
 
     def get_result(self, res):
         try:
@@ -138,12 +131,8 @@ class WolframAlphaSkill(FallbackSkill):
             except:
                 return result
 
-    def handle_fallback(self, message):
-        utt = message.data.get('utterance')
-        self.log.debug("WolframAlpha fallback attempt: " + utt)
-        lang = message.data.get('lang')
-        if not lang:
-            lang = "en-us"
+    def CQS_match_query_phrase(self, utt):
+        self.log.debug("WolframAlpha query: " + utt)
 
         # TODO: Localization.  Wolfram only allows queries in English,
         #       so perhaps autotranslation or other languages?  That
@@ -151,7 +140,7 @@ class WolframAlphaSkill(FallbackSkill):
         #       which is a lot of room for introducting translation
         #       issues.
 
-        utterance = normalize(utt, lang, remove_articles=False)
+        utterance = normalize(utt, self.lang, remove_articles=False)
         parsed_question = self.question_parser.parse(utterance)
 
         query = utterance
@@ -185,13 +174,16 @@ class WolframAlphaSkill(FallbackSkill):
             response = self.process_wolfram_string(result)
 
             # remember for any later 'source' request
-            self.last_query = query
-            self.last_answer = response
-
-            self.speak(response)
-            return True
+            data = {'query': query, 'answer': response}
+            return (utt, CQSMatchLevel.GENERAL, response, data)
         else:
-            return False
+            return None
+
+    def CQS_action(self, phrase, data):
+        """ If selected prepare to send sources. """
+        self.log.info('Setting information for source')
+        self.last_query = data['query']
+        self.last_answer = data['answer']
 
     @staticmethod
     def __find_pod_id(pods, pod_id):
