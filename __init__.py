@@ -23,10 +23,18 @@ from adapt.intent import IntentBuilder
 from mycroft.api import Api
 from mycroft.messagebus.message import Message
 from mycroft.skills.core import intent_handler
-from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
 from mycroft.util.parse import normalize
 from mycroft.version import check_version
 from mycroft.util.log import LOG
+try:
+    from mycroft.skills.common_query_skill import (CommonQuerySkill,
+                                                   CQSMatchLevel)
+except ImportError:
+    # Compatibility: make sure that skill can be loaded despite missing imports
+    # TODO: Remove in 19.02
+    from mycroft import MycroftSkill
+    class CommonQuerySkill(MycroftSkill):
+        pass
 
 
 class EnglishQuestionParser(object):
