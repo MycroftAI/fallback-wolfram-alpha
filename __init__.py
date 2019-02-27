@@ -15,6 +15,7 @@
 
 import re
 import wolframalpha
+import requests
 from os.path import dirname, join
 from requests import HTTPError
 from io import BytesIO
@@ -71,9 +72,27 @@ class EnglishQuestionParser(object):
         return None
 
 
+SPOKEN_URL = 'http://api.wolframalpha.com/v1/spoken'
+
+
+class WolframClient(wolframalpha.Client):
+    """ Adding a spoken api method to the normal wolfram client. """
+    def spoken(self, query, lat_lon, units='metric'):
+        r = requests.get(SPOKEN_URL,
+                         params={'appid': self.app_id,
+                                 'i': query,
+                                 'geolocation': '{},{}'.format(*lat_lon),
+                                 'units': units})
+        if r.ok:
+            return r.text
+        else:
+            return None
+
+
 class WAApi(Api):
+    """ Wrapper for wolfram alpha calls through Mycroft Home API. """
     def __init__(self):
-        super(WAApi, self).__init__("wa")
+        super(WAApi, self).__init__("wolframAlphaSpoken")
 
     def get_data(self, response):
         return response
@@ -81,6 +100,23 @@ class WAApi(Api):
     def query(self, input):
         data = self.request({"query": {"input": input}})
         return wolframalpha.Result(BytesIO(data.content))
+
+
+    def spoken(self, query, lat_lon, units='metric'):
+        try:
+            r = self.request({'query': {'i': query,
+                                        'geolocation': '{},{}'.format(*lat_lon),
+                                        'units': units}})
+        except HTTPError as e:
+            if e.response.status_code == 401:
+                raise
+            else:
+                r = e.response
+        if r.ok:
+            print(r.text)
+            return r.text
+        else:
+            return None
 
 
 class WolframAlphaSkill(CommonQuerySkill):
@@ -105,7 +141,7 @@ class WolframAlphaSkill(CommonQuerySkill):
 
         if appID and not self.config.get('proxy'):
             # user has a private AppID
-            self.client = wolframalpha.Client(appID)
+            self.client = WolframClient(appID)
         else:
             # use the default API for Wolfram queries
             self.client = WAApi()
@@ -161,9 +197,16 @@ class WolframAlphaSkill(CommonQuerySkill):
             return False
 
         try:
-            self.enclosure.mouth_think()
-            res = self.client.query(query)
-            result = self.get_result(res)
+            response = self.client.spoken(utt,
+                (self.location['coordinate']['latitude'],
+                    self.location['coordinate']['longitude']),
+                self.config_core['system_unit'])
+            if response:
+                response = self.process_wolfram_string(response)
+                return (utt, CQSMatchLevel.GENERAL, response,
+                        {'query': utt, 'answer': response})
+            else:
+                return None
         except HTTPError as e:
             if e.response.status_code == 401:
                 self.emitter.emit(Message("mycroft.not.paired"))
@@ -172,20 +215,12 @@ class WolframAlphaSkill(CommonQuerySkill):
             self.log.exception(e)
             return False
 
-        if result:
-            response = self.process_wolfram_string(result)
-
-            # remember for any later 'source' request
-            data = {'query': query, 'answer': response}
-            return (utt, CQSMatchLevel.GENERAL, response, data)
-        else:
-            return None
-
     def CQS_action(self, phrase, data):
         """ If selected prepare to send sources. """
-        self.log.info('Setting information for source')
-        self.last_query = data['query']
-        self.last_answer = data['answer']
+        if data:
+            self.log.info('Setting information for source')
+            self.last_query = data['query']
+            self.last_answer = data['answer']
 
     @staticmethod
     def __find_pod_id(pods, pod_id):
