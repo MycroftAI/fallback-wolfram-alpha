@@ -44,12 +44,12 @@ class EnglishQuestionParser(object):
             re.compile(
                 r".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
                 r"(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
-                r"(?P<Query2>.*)"),
+                r"(?P<Query2>.*)", re.IGNORECASE),
             # Match:
             #    how X Y, e.g. "how do crickets chirp"
             re.compile(
                 r".*(?P<QuestionWord>who|what|when|where|why|which|how) "
-                r"(?P<QuestionVerb>\w+) (?P<Query>.*)")
+                r"(?P<QuestionVerb>\w+) (?P<Query>.*)", re.IGNORECASE)
         ]
 
     def _normalize(self, groupdict):
