@@ -272,10 +272,6 @@ class WolframAlphaSkill(CommonQuerySkill):
         else:
             self.speak_dialog("no.info.to.send")
 
-    def shutdown(self):
-        self.remove_fallback(self.handle_fallback)
-        super(WolframAlphaSkill, self).shutdown()
-
     def __translate(self, template, data=None):
         return self.dialog_renderer.render(template, data)
 
