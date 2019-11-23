@@ -16,6 +16,7 @@
 import re
 import wolframalpha
 import requests
+import translators
 from os.path import dirname, join
 from requests import HTTPError
 from io import BytesIO
@@ -129,6 +130,7 @@ class WolframAlphaSkill(CommonQuerySkill):
         self.question_parser = EnglishQuestionParser()
         self.last_query = None
         self.last_answer = None
+        self.autotranslate = False
 
     def __init_client(self):
         # Attempt to get an AppID skill settings instead (normally this
@@ -143,7 +145,16 @@ class WolframAlphaSkill(CommonQuerySkill):
             self.client = WAApi()
 
     def initialize(self):
-        pass
+        self._setup()
+        self.settings_change_callback =self.on_settings_changed
+
+    def on_settings_changed(self):
+        self.log.debug("settings changed")
+        self._setup()
+
+    def _setup(self):
+        self.autotranslate = self.settings.get('autotranslate', True)
+        self.log.debug("autotranslate: {}".format(self.autotranslate))
 
     def get_result(self, res):
         try:
@@ -174,6 +185,12 @@ class WolframAlphaSkill(CommonQuerySkill):
         #       which is a lot of room for introducting translation
         #       issues.
 
+        # Automatic translation to English
+        orig_utt = utt
+        if self.autotranslate and self.lang[:2] != 'en':
+            utt = translators.google(utt, self.lang[:2], 'en')
+            self.log.debug("translation: {}".format(utt))
+
         utterance = normalize(utt, self.lang, remove_articles=False)
         parsed_question = self.question_parser.parse(utterance)
 
@@ -199,6 +216,11 @@ class WolframAlphaSkill(CommonQuerySkill):
                 self.config_core['system_unit'])
             if response:
                 response = self.process_wolfram_string(response)
+                # Automatic re-translation to 'self.lang'
+                if self.autotranslate and self.lang[:2] != 'en':
+                    response = translators.google(response, 'en', self.lang[:2])
+                    utt = orig_utt
+                self.log.debug("utt: {} res: {}".format(utt, response))
                 return (utt, CQSMatchLevel.GENERAL, response,
                         {'query': utt, 'answer': response})
             else:
