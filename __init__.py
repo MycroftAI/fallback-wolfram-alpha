@@ -16,10 +16,10 @@
 import re
 import wolframalpha
 import requests
-import translators
 from os.path import dirname, join
 from requests import HTTPError
 from io import BytesIO
+from mtranslate import translate
 
 from adapt.intent import IntentBuilder
 from mycroft.api import Api
@@ -188,7 +188,8 @@ class WolframAlphaSkill(CommonQuerySkill):
         # Automatic translation to English
         orig_utt = utt
         if self.autotranslate and self.lang[:2] != 'en':
-            utt = translators.google(utt, self.lang[:2], 'en')
+            utt = translate(utt, from_language=self.lang[:2], 
+                            to_language='en')
             self.log.debug("translation: {}".format(utt))
 
         utterance = normalize(utt, self.lang, remove_articles=False)
@@ -218,7 +219,8 @@ class WolframAlphaSkill(CommonQuerySkill):
                 response = self.process_wolfram_string(response)
                 # Automatic re-translation to 'self.lang'
                 if self.autotranslate and self.lang[:2] != 'en':
-                    response = translators.google(response, 'en', self.lang[:2])
+                    response = translate(response, from_language='en', 
+                                         to_language=self.lang[:2])
                     utt = orig_utt
                 self.log.debug("utt: {} res: {}".format(utt, response))
                 return (utt, CQSMatchLevel.GENERAL, response,
