@@ -102,6 +102,9 @@ class WAApi(Api):
         data = self.request({"query": {"input": input}})
         return wolframalpha.Result(BytesIO(data.content))
 
+    def query_to_string(self, input):
+        data = self.request({"query": {"input": input}})
+        return data.content.decode("utf-8")
 
     def spoken(self, query, lat_lon, units='metric'):
         try:
@@ -147,6 +150,7 @@ class WolframAlphaSkill(CommonQuerySkill):
     def initialize(self):
         self._setup()
         self.settings_change_callback =self.on_settings_changed
+        self.add_event('wolfram.unspoken.request', self.emit_text_result)
 
     def on_settings_changed(self):
         self.log.debug("settings changed")
@@ -175,6 +179,10 @@ class WolframAlphaSkill(CommonQuerySkill):
                 return result
             except:
                 return result
+
+    def emit_text_result(self, message):
+        response = self.client.query_to_string(message.data.get('query'))
+        self.bus.emit(Message("wolfram.unspoken.response", {'result': response}))
 
     def CQS_match_query_phrase(self, utt):
         self.log.debug("WolframAlpha query: " + utt)
