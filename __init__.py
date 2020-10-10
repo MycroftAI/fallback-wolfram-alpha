@@ -150,7 +150,7 @@ class WolframAlphaSkill(CommonQuerySkill):
     def initialize(self):
         self._setup()
         self.settings_change_callback =self.on_settings_changed
-        self.add_event('wolfram.unspoken.request', self.emit_text_result)
+        self.add_event('skill.wolfram.unspoken.request', self.emit_text_result)
 
     def on_settings_changed(self):
         self.log.debug("settings changed")
@@ -182,7 +182,7 @@ class WolframAlphaSkill(CommonQuerySkill):
 
     def emit_text_result(self, message):
         response = self.client.query_to_string(message.data.get('query'))
-        self.bus.emit(Message("wolfram.unspoken.response", {'result': response}))
+        self.bus.emit(Message("skill.wolfram.unspoken.response", {'result': response}))
 
     def CQS_match_query_phrase(self, utt):
         self.log.debug("WolframAlpha query: " + utt)
