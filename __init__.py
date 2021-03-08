@@ -229,7 +229,7 @@ class WolframAlphaSkill(CommonQuerySkill):
                 return None
         except HTTPError as e:
             if e.response.status_code == 401:
-                self.emitter.emit(Message("mycroft.not.paired"))
+                self.bus.emit(Message("mycroft.not.paired"))
             return True
         except Exception as e:
             self.log.exception(e)
