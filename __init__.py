@@ -45,24 +45,27 @@ class EnglishQuestionParser(object):
             re.compile(
                 r".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
                 r"(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
-                r"(?P<Query2>.*)", re.IGNORECASE),
+                r"(?P<Query2>.*)",
+                re.IGNORECASE,
+            ),
             # Match:
             #    how X Y, e.g. "how do crickets chirp"
             re.compile(
                 r".*(?P<QuestionWord>who|what|when|where|why|which|how) "
-                r"(?P<QuestionVerb>\w+) (?P<Query>.*)", re.IGNORECASE)
+                r"(?P<QuestionVerb>\w+) (?P<Query>.*)",
+                re.IGNORECASE,
+            ),
         ]
 
     def _normalize(self, groupdict):
-        if 'Query' in groupdict:
+        if "Query" in groupdict:
             return groupdict
-        elif 'Query1' and 'Query2' in groupdict:
+        elif "Query1" and "Query2" in groupdict:
             # Join the two parts into a single 'Query'
             return {
-                'QuestionWord': groupdict.get('QuestionWord'),
-                'QuestionVerb': groupdict.get('QuestionVerb'),
-                'Query': ' '.join([groupdict.get('Query1'), groupdict.get(
-                    'Query2')])
+                "QuestionWord": groupdict.get("QuestionWord"),
+                "QuestionVerb": groupdict.get("QuestionVerb"),
+                "Query": " ".join([groupdict.get("Query1"), groupdict.get("Query2")]),
             }
 
     def parse(self, utterance):
@@ -73,17 +76,22 @@ class EnglishQuestionParser(object):
         return None
 
 
-SPOKEN_URL = 'http://api.wolframalpha.com/v1/spoken'
+SPOKEN_URL = "http://api.wolframalpha.com/v1/spoken"
 
 
 class WolframClient(wolframalpha.Client):
     """ Adding a spoken api method to the normal wolfram client. """
-    def spoken(self, query, lat_lon, units='metric'):
-        r = requests.get(SPOKEN_URL,
-                         params={'appid': self.app_id,
-                                 'i': query,
-                                 'geolocation': '{},{}'.format(*lat_lon),
-                                 'units': units})
+
+    def spoken(self, query, lat_lon, units="metric"):
+        r = requests.get(
+            SPOKEN_URL,
+            params={
+                "appid": self.app_id,
+                "i": query,
+                "geolocation": "{},{}".format(*lat_lon),
+                "units": units,
+            },
+        )
         if r.ok:
             return r.text
         else:
@@ -92,6 +100,7 @@ class WolframClient(wolframalpha.Client):
 
 class WAApi(Api):
     """ Wrapper for wolfram alpha calls through Mycroft Home API. """
+
     def __init__(self):
         super(WAApi, self).__init__("wolframAlphaSpoken")
 
@@ -102,12 +111,17 @@ class WAApi(Api):
         data = self.request({"query": {"input": input}})
         return wolframalpha.Result(BytesIO(data.content))
 
-
-    def spoken(self, query, lat_lon, units='metric'):
+    def spoken(self, query, lat_lon, units="metric"):
         try:
-            r = self.request({'query': {'i': query,
-                                        'geolocation': '{},{}'.format(*lat_lon),
-                                        'units': units}})
+            r = self.request(
+                {
+                    "query": {
+                        "i": query,
+                        "geolocation": "{},{}".format(*lat_lon),
+                        "units": units,
+                    }
+                }
+            )
         except HTTPError as e:
             if e.response.status_code == 401:
                 raise
@@ -121,8 +135,13 @@ class WAApi(Api):
 
 
 class WolframAlphaSkill(CommonQuerySkill):
-    PIDS = ['Value', 'NotableFacts:PeopleData', 'BasicInformation:PeopleData',
-            'Definition', 'DecimalApproximation']
+    PIDS = [
+        "Value",
+        "NotableFacts:PeopleData",
+        "BasicInformation:PeopleData",
+        "Definition",
+        "DecimalApproximation",
+    ]
 
     def __init__(self):
         super().__init__()
@@ -135,7 +154,7 @@ class WolframAlphaSkill(CommonQuerySkill):
     def __init_client(self):
         # Attempt to get an AppID skill settings instead (normally this
         # doesn't exist, but privacy-conscious might want to do this)
-        appID = self.settings.get('appID', None)
+        appID = self.settings.get("appID", None)
 
         if appID:
             # user has a private AppID
@@ -146,14 +165,14 @@ class WolframAlphaSkill(CommonQuerySkill):
 
     def initialize(self):
         self._setup()
-        self.settings_change_callback =self.on_settings_changed
+        self.settings_change_callback = self.on_settings_changed
 
     def on_settings_changed(self):
         self.log.debug("settings changed")
         self._setup()
 
     def _setup(self):
-        self.autotranslate = self.settings.get('autotranslate', True)
+        self.autotranslate = self.settings.get("autotranslate", True)
         self.log.debug("autotranslate: {}".format(self.autotranslate))
 
     def get_result(self, res):
@@ -165,13 +184,13 @@ class WolframAlphaSkill(CommonQuerySkill):
                 for pid in self.PIDS:
                     result = self.__find_pod_id(res.pods, pid)
                     if result:
-                        if pid.endswith(':PeopleData'):
+                        if pid.endswith(":PeopleData"):
                             result = parse_people_data(result)
                         else:
                             result = result[:5]
                         break
                 if not result:
-                    result = self.__find_num(res.pods, '200')
+                    result = self.__find_num(res.pods, "200")
                 return result
             except:
                 return result
@@ -187,9 +206,8 @@ class WolframAlphaSkill(CommonQuerySkill):
 
         # Automatic translation to English
         orig_utt = utt
-        if self.autotranslate and self.lang[:2] != 'en':
-            utt = translate(utt, from_language=self.lang[:2], 
-                            to_language='en')
+        if self.autotranslate and self.lang[:2] != "en":
+            utt = translate(utt, from_language=self.lang[:2], to_language="en")
             self.log.debug("translation: {}".format(utt))
 
         utterance = normalize(utt, self.lang, remove_articles=False)
@@ -198,9 +216,9 @@ class WolframAlphaSkill(CommonQuerySkill):
         query = utterance
         if parsed_question:
             # Try to store pieces of utterance (None if not parsed_question)
-            utt_word = parsed_question.get('QuestionWord')
-            utt_verb = parsed_question.get('QuestionVerb')
-            utt_query = parsed_question.get('Query')
+            utt_word = parsed_question.get("QuestionWord")
+            utt_verb = parsed_question.get("QuestionVerb")
+            utt_query = parsed_question.get("Query")
             query = "%s %s %s" % (utt_word, utt_verb, utt_query)
             phrase = "know %s %s %s" % (utt_word, utt_query, utt_verb)
             self.log.debug("Querying WolframAlpha: " + query)
@@ -211,20 +229,29 @@ class WolframAlphaSkill(CommonQuerySkill):
             return False
 
         try:
-            response = self.client.spoken(utt,
-                (self.location['coordinate']['latitude'],
-                    self.location['coordinate']['longitude']),
-                self.config_core['system_unit'])
+            response = self.client.spoken(
+                utt,
+                (
+                    self.location["coordinate"]["latitude"],
+                    self.location["coordinate"]["longitude"],
+                ),
+                self.config_core["system_unit"],
+            )
             if response:
                 response = self.process_wolfram_string(response)
                 # Automatic re-translation to 'self.lang'
-                if self.autotranslate and self.lang[:2] != 'en':
-                    response = translate(response, from_language='en', 
-                                         to_language=self.lang[:2])
+                if self.autotranslate and self.lang[:2] != "en":
+                    response = translate(
+                        response, from_language="en", to_language=self.lang[:2]
+                    )
                     utt = orig_utt
                 self.log.debug("utt: {} res: {}".format(utt, response))
-                return (utt, CQSMatchLevel.GENERAL, response,
-                        {'query': utt, 'answer': response})
+                return (
+                    utt,
+                    CQSMatchLevel.GENERAL,
+                    response,
+                    {"query": utt, "answer": response},
+                )
             else:
                 return None
         except HTTPError as e:
@@ -238,9 +265,9 @@ class WolframAlphaSkill(CommonQuerySkill):
     def CQS_action(self, phrase, data):
         """ If selected prepare to send sources. """
         if data:
-            self.log.info('Setting information for source')
-            self.last_query = data['query']
-            self.last_answer = data['answer']
+            self.log.info("Setting information for source")
+            self.last_query = data["query"]
+            self.last_answer = data["answer"]
 
     @staticmethod
     def __find_pod_id(pods, pod_id):
@@ -255,7 +282,7 @@ class WolframAlphaSkill(CommonQuerySkill):
     @staticmethod
     def __find_num(pods, pod_num):
         for pod in pods:
-            if pod.node.attrib['position'] == pod_num:
+            if pod.node.attrib["position"] == pod_num:
                 return pod.text
         return None
 
@@ -272,13 +299,12 @@ class WolframAlphaSkill(CommonQuerySkill):
         # Convert !s to factorial
         text = re.sub(r"!", r",factorial", text)
 
-        with open(join(dirname(__file__), 'regex',
-                       self.lang, 'list.rx'), 'r') as regex:
-            list_regex = re.compile(regex.readline().strip('\n'))
+        with open(join(dirname(__file__), "regex", self.lang, "list.rx"), "r") as regex:
+            list_regex = re.compile(regex.readline().strip("\n"))
 
         match = list_regex.match(text)
         if match:
-            text = match.group('Definition')
+            text = match.group("Definition")
 
         return text
 
@@ -286,18 +312,21 @@ class WolframAlphaSkill(CommonQuerySkill):
     def handle_get_sources(self, message):
         if self.last_query:
             # Send an email to the account this device is registered to
-            data = {"query": self.last_query,
-                    "answer": self.last_answer,
-                    "url_query": self.last_query.replace(" ", "+")}
+            data = {
+                "query": self.last_query,
+                "answer": self.last_answer,
+                "url_query": self.last_query.replace(" ", "+"),
+            }
 
-            self.send_email(self.__translate("email.subject", data),
-                            self.__translate("email.body", data))
+            self.send_email(
+                self.__translate("email.subject", data),
+                self.__translate("email.body", data),
+            )
             self.speak_dialog("sent.email")
         else:
             self.speak_dialog("no.info.to.send")
 
     def shutdown(self):
-        self.remove_fallback(self.handle_fallback)
         super(WolframAlphaSkill, self).shutdown()
 
     def __translate(self, template, data=None):
@@ -305,11 +334,12 @@ class WolframAlphaSkill(CommonQuerySkill):
 
 
 def parse_people_data(data):
-    """ Handle :PeopleData
+    """Handle :PeopleData
     Reduces the length of the returned data somewhat.
     """
-    lines = data.split('\n')
-    return '. '.join(lines[:min(len(lines), 3)])
+    lines = data.split("\n")
+    return ". ".join(lines[: min(len(lines), 3)])
+
 
 def create_skill():
     return WolframAlphaSkill()
