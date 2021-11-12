@@ -50,14 +50,11 @@ class WolframAlphaSkill(CommonQuerySkill):
             self.client = WAApi()
 
     def initialize(self):
-        self._setup()
+        self.on_settings_changed()
         self.settings_change_callback = self.on_settings_changed
 
     def on_settings_changed(self):
-        self.log.debug("settings changed")
-        self._setup()
-
-    def _setup(self):
+        self.log.debug("Settings changed")
         self.autotranslate = self.settings.get("autotranslate", True)
         self.log.debug("autotranslate: {}".format(self.autotranslate))
 
