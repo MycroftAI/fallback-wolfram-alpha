@@ -17,8 +17,18 @@ import re
 from os.path import join
 
 
-def process_wolfram_string(text, config):
+def process_wolfram_string(text: str, config: dict) -> str:
+    """Clean and format an answer from Wolfram into a presentable format.
 
+    Args:
+        text: Original answer from Wolfram Alpha
+        config: {
+            lang: language of the answer
+            root_dir: of the Skill to find a regex file
+        }
+    Returns:
+        Cleaned version of the input string.
+    """
     # Remove extra whitespace
     text = re.sub(r" \s+", r" ", text)
 
