@@ -14,21 +14,19 @@
 #
 
 import re
-import wolframalpha
-import requests
-from os.path import dirname, join
-from requests import HTTPError
 from io import BytesIO
-from mtranslate import translate
+from os.path import dirname, join
 
-from adapt.intent import IntentBuilder
+import requests
+import wolframalpha
+from mtranslate import translate
+from requests import HTTPError
+
+from mycroft import AdaptIntent, intent_handler
 from mycroft.api import Api
 from mycroft.messagebus.message import Message
-from mycroft.skills.core import intent_handler
-from mycroft.util.parse import normalize
-from mycroft.version import check_version
-from mycroft.util.log import LOG
 from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
+from mycroft.util.parse import normalize
 
 
 class EnglishQuestionParser(object):
@@ -308,7 +306,7 @@ class WolframAlphaSkill(CommonQuerySkill):
 
         return text
 
-    @intent_handler(IntentBuilder("Info").require("Give").require("Source"))
+    @intent_handler(AdaptIntent().require("Give").require("Source"))
     def handle_get_sources(self, message):
         if self.last_query:
             # Send an email to the account this device is registered to
