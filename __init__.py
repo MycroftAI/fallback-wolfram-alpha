@@ -13,124 +13,18 @@
 # limitations under the License.
 #
 
-import re
-from io import BytesIO
-from os.path import dirname, join
-
-import requests
-import wolframalpha
 from mtranslate import translate
 from requests import HTTPError
 
 from mycroft import AdaptIntent, intent_handler
-from mycroft.api import Api
 from mycroft.messagebus.message import Message
 from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
 from mycroft.util.parse import normalize
 
-
-class EnglishQuestionParser(object):
-    """
-    Poor-man's english question parser. Not even close to conclusive, but
-    appears to construct some decent w|a queries and responses.
-    """
-
-    def __init__(self):
-        self.regexes = [
-            # Match things like:
-            #    * when X was Y, e.g. "tell me when america was founded"
-            #    how X is Y, e.g. "how tall is mount everest"
-            re.compile(
-                r".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
-                r"(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
-                r"(?P<Query2>.*)",
-                re.IGNORECASE,
-            ),
-            # Match:
-            #    how X Y, e.g. "how do crickets chirp"
-            re.compile(
-                r".*(?P<QuestionWord>who|what|when|where|why|which|how) "
-                r"(?P<QuestionVerb>\w+) (?P<Query>.*)",
-                re.IGNORECASE,
-            ),
-        ]
-
-    def _normalize(self, groupdict):
-        if "Query" in groupdict:
-            return groupdict
-        elif "Query1" and "Query2" in groupdict:
-            # Join the two parts into a single 'Query'
-            return {
-                "QuestionWord": groupdict.get("QuestionWord"),
-                "QuestionVerb": groupdict.get("QuestionVerb"),
-                "Query": " ".join([groupdict.get("Query1"), groupdict.get("Query2")]),
-            }
-
-    def parse(self, utterance):
-        for regex in self.regexes:
-            match = regex.match(utterance)
-            if match:
-                return self._normalize(match.groupdict())
-        return None
-
-
-SPOKEN_URL = "http://api.wolframalpha.com/v1/spoken"
-
-
-class WolframClient(wolframalpha.Client):
-    """ Adding a spoken api method to the normal wolfram client. """
-
-    def spoken(self, query, lat_lon, units="metric"):
-        r = requests.get(
-            SPOKEN_URL,
-            params={
-                "appid": self.app_id,
-                "i": query,
-                "geolocation": "{},{}".format(*lat_lon),
-                "units": units,
-            },
-        )
-        if r.ok:
-            return r.text
-        else:
-            return None
-
-
-class WAApi(Api):
-    """ Wrapper for wolfram alpha calls through Mycroft Home API. """
-
-    def __init__(self):
-        super(WAApi, self).__init__("wolframAlphaSpoken")
-
-    def get_data(self, response):
-        return response
-
-    def query(self, input):
-        data = self.request({"query": {"input": input}})
-        return wolframalpha.Result(BytesIO(data.content))
-
-    def spoken(self, query, lat_lon, units="metric"):
-        try:
-            r = self.request(
-                {
-                    "query": {
-                        "i": query,
-                        "geolocation": "{},{}".format(*lat_lon),
-                        "units": units,
-                    }
-                }
-            )
-        except HTTPError as e:
-            if e.response.status_code == 401:
-                raise
-            else:
-                r = e.response
-        if r.ok:
-            print(r.text)
-            return r.text
-        else:
-            return None
-
+from .skill.mycroft_api import WAApi
+from .skill.parse import EnglishQuestionParser
+from .skill.util import process_wolfram_string
+from .skill.wolfram_client import WolframClient
 
 class WolframAlphaSkill(CommonQuerySkill):
     PIDS = [
@@ -236,7 +130,10 @@ class WolframAlphaSkill(CommonQuerySkill):
                 self.config_core["system_unit"],
             )
             if response:
-                response = self.process_wolfram_string(response)
+                response = process_wolfram_string(response, {
+                    "lang": self.lang,
+                    "root_dir": self.root_dir
+                    })
                 # Automatic re-translation to 'self.lang'
                 if self.autotranslate and self.lang[:2] != "en":
                     response = translate(
@@ -284,27 +181,7 @@ class WolframAlphaSkill(CommonQuerySkill):
                 return pod.text
         return None
 
-    def process_wolfram_string(self, text):
-        # Remove extra whitespace
-        text = re.sub(r" \s+", r" ", text)
-
-        # Convert | symbols to commas
-        text = re.sub(r" \| ", r", ", text)
-
-        # Convert newlines to commas
-        text = re.sub(r"\n", r", ", text)
-
-        # Convert !s to factorial
-        text = re.sub(r"!", r",factorial", text)
-
-        with open(join(dirname(__file__), "regex", self.lang, "list.rx"), "r") as regex:
-            list_regex = re.compile(regex.readline().strip("\n"))
-
-        match = list_regex.match(text)
-        if match:
-            text = match.group("Definition")
-
-        return text
+    
 
     @intent_handler(AdaptIntent().require("Give").require("Source"))
     def handle_get_sources(self, message):
