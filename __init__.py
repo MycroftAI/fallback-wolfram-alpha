@@ -27,13 +27,6 @@ from .skill.util import process_wolfram_string
 from .skill.wolfram_client import WolframClient
 
 class WolframAlphaSkill(CommonQuerySkill):
-    PIDS = [
-        "Value",
-        "NotableFacts:PeopleData",
-        "BasicInformation:PeopleData",
-        "Definition",
-        "DecimalApproximation",
-    ]
 
     def __init__(self):
         super().__init__()
@@ -66,26 +59,6 @@ class WolframAlphaSkill(CommonQuerySkill):
     def _setup(self):
         self.autotranslate = self.settings.get("autotranslate", True)
         self.log.debug("autotranslate: {}".format(self.autotranslate))
-
-    def get_result(self, res):
-        try:
-            return next(res.results).text
-        except:
-            result = None
-            try:
-                for pid in self.PIDS:
-                    result = self.__find_pod_id(res.pods, pid)
-                    if result:
-                        if pid.endswith(":PeopleData"):
-                            result = parse_people_data(result)
-                        else:
-                            result = result[:5]
-                        break
-                if not result:
-                    result = self.__find_num(res.pods, "200")
-                return result
-            except:
-                return result
 
     def CQS_match_query_phrase(self, utt):
         self.log.debug("WolframAlpha query: " + utt)
@@ -164,25 +137,6 @@ class WolframAlphaSkill(CommonQuerySkill):
             self.last_query = data["query"]
             self.last_answer = data["answer"]
 
-    @staticmethod
-    def __find_pod_id(pods, pod_id):
-        # Wolfram returns results in "pods".  This searches a result
-        # structure for a specific pod ID.
-        # See https://products.wolframalpha.com/api/documentation/
-        for pod in pods:
-            if pod_id in pod.id:
-                return pod.text
-        return None
-
-    @staticmethod
-    def __find_num(pods, pod_num):
-        for pod in pods:
-            if pod.node.attrib["position"] == pod_num:
-                return pod.text
-        return None
-
-    
-
     @intent_handler(AdaptIntent().require("Give").require("Source"))
     def handle_get_sources(self, message):
         if self.last_query:
@@ -206,14 +160,6 @@ class WolframAlphaSkill(CommonQuerySkill):
 
     def __translate(self, template, data=None):
         return self.dialog_renderer.render(template, data)
-
-
-def parse_people_data(data):
-    """Handle :PeopleData
-    Reduces the length of the returned data somewhat.
-    """
-    lines = data.split("\n")
-    return ". ".join(lines[: min(len(lines), 3)])
 
 
 def create_skill():
