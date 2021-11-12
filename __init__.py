@@ -52,6 +52,18 @@ class WolframAlphaSkill(CommonQuerySkill):
     def initialize(self):
         self.on_settings_changed()
         self.settings_change_callback = self.on_settings_changed
+        try:
+            response = self.client.get_visual_answer(
+                "what is 2 + 2",
+                (
+                    self.location["coordinate"]["latitude"],
+                    self.location["coordinate"]["longitude"],
+                ),
+                self.config_core["system_unit"],
+            )
+            self.log.error(response)
+        except Exception as err:
+            self.log.exception(err)
 
     def on_settings_changed(self):
         self.log.debug("Settings changed")
