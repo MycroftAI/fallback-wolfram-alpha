@@ -26,6 +26,7 @@ from .skill.parse import EnglishQuestionParser
 from .skill.util import process_wolfram_string
 from .skill.wolfram_client import WolframClient
 
+
 class WolframAlphaSkill(CommonQuerySkill):
 
     def __init__(self):
@@ -74,7 +75,6 @@ class WolframAlphaSkill(CommonQuerySkill):
         if self.autotranslate and self.lang[:2] != "en":
             utt = translate(utt, from_language=self.lang[:2], to_language="en")
             self.log.debug("translation: {}".format(utt))
-
         utterance = normalize(utt, self.lang, remove_articles=False)
         parsed_question = self.question_parser.parse(utterance)
 
@@ -106,7 +106,7 @@ class WolframAlphaSkill(CommonQuerySkill):
                 response = process_wolfram_string(response, {
                     "lang": self.lang,
                     "root_dir": self.root_dir
-                    })
+                })
                 # Automatic re-translation to 'self.lang'
                 if self.autotranslate and self.lang[:2] != "en":
                     response = translate(
@@ -131,14 +131,18 @@ class WolframAlphaSkill(CommonQuerySkill):
             return False
 
     def CQS_action(self, phrase, data):
-        """ If selected prepare to send sources. """
+        """If selected to answer prepare data for follow up queries.
+
+        Currently this includes detail on the source of the answer.
+        """
         if data:
-            self.log.info("Setting information for source")
+            self.log.info("Setting information for follow up query")
             self.last_query = data["query"]
             self.last_answer = data["answer"]
 
     @intent_handler(AdaptIntent().require("Give").require("Source"))
-    def handle_get_sources(self, message):
+    def handle_get_sources(self, _):
+        """Intent handler to request the information source of previous answer."""
         if self.last_query:
             # Send an email to the account this device is registered to
             data = {

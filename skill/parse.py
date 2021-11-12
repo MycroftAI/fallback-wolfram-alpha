@@ -17,9 +17,10 @@ import re
 
 
 class EnglishQuestionParser(object):
-    """
-    Poor-man's english question parser. Not even close to conclusive, but
-    appears to construct some decent w|a queries and responses.
+    """Simplistic English question parser for use with WolframAlpha.
+
+    It is not even close to conclusive, but appears to construct some decent
+    WolframAlpha queries and responses.
     """
 
     def __init__(self):

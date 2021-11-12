@@ -20,7 +20,7 @@ from mycroft.api import Api
 
 
 class WAApi(Api):
-    """ Wrapper for wolfram alpha calls through Mycroft Home API. """
+    """ Wrapper for wolfram alpha calls through Mycroft Home API."""
 
     def __init__(self):
         super(WAApi, self).__init__("wolframAlphaSpoken")
