@@ -13,28 +13,61 @@
 # limitations under the License.
 #
 
-from io import BytesIO
+from requests import HTTPError
 
-import wolframalpha
 from mycroft.api import Api
+from mycroft.util import LOG
 
 
-class WAApi(Api):
-    """ Wrapper for wolfram alpha calls through Mycroft Home API."""
+class WAApi():
+    """Wrapper for multiple WolframAlpha API endpoints through Mycroft Home."""
+
+    def __init__(self) -> None:
+        self.simple_api = WASimpleApi()
+        self.spoken_api = WASpokenApi()
+
+    def get_visual_answer(self, *args, **kwargs):
+        """Get visual answer to a query."""
+        return self.simple_api.get_visual(*args, **kwargs)
+
+    def get_spoken_answer(self, *args, **kwargs):
+        """Get speakable answer to a query."""
+        return self.spoken_api.get_spoken(*args, **kwargs)
+
+
+class WASimpleApi(Api):
+    """ Wrapper for the WolframAlpha Simple API through Mycroft Home."""
 
     def __init__(self):
-        super(WAApi, self).__init__("wolframAlphaSpoken")
+        super(WASimpleApi, self).__init__("wolframAlphaSimple")
 
-    def get_data(self, response):
+    def get_visual(self, query, lat_lon, units="metric", optional_params: dict = {}):
+        request_params = {
+            "i": query,
+            "geolocation": "{},{}".format(*lat_lon),
+            "units": units,
+            **optional_params
+        }
+        try:
+            response = self.request({"query": request_params})
+        except HTTPError as err:
+            if err.response.status_code == 401:
+                raise
+            else:
+                LOG.exception(err)
+                return None
         return response
 
-    def query(self, input):
-        data = self.request({"query": {"input": input}})
-        return wolframalpha.Result(BytesIO(data.content))
 
-    def spoken(self, query, lat_lon, units="metric"):
+class WASpokenApi(Api):
+    """ Wrapper for the WolframAlpha Spoken API through Mycroft Home."""
+
+    def __init__(self):
+        super(WASpokenApi, self).__init__("wolframAlphaSpoken")
+
+    def get_spoken(self, query, lat_lon, units="metric"):
         try:
-            r = self.request(
+            response = self.request(
                 {
                     "query": {
                         "i": query,
@@ -43,13 +76,10 @@ class WAApi(Api):
                     }
                 }
             )
-        except HTTPError as e:
-            if e.response.status_code == 401:
+        except HTTPError as err:
+            if err.response.status_code == 401:
                 raise
             else:
-                r = e.response
-        if r.ok:
-            print(r.text)
-            return r.text
-        else:
-            return None
+                LOG.exception(err)
+                return None
+        return response

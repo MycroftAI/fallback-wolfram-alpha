@@ -91,7 +91,7 @@ class WolframAlphaSkill(CommonQuerySkill):
             return False
 
         try:
-            response = self.client.spoken(
+            response = self.client.get_spoken_answer(
                 utt,
                 (
                     self.location["coordinate"]["latitude"],
