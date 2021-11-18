@@ -13,7 +13,6 @@
 # limitations under the License.
 #
 
-from .mycroft_api import WAApi
 from .parse import EnglishQuestionParser
 from .util import process_wolfram_string
-from .wolfram_client import WolframClient
+from .wolfram_client import WolframAlphaClient

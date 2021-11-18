@@ -13,29 +13,40 @@
 # limitations under the License.
 #
 
+from collections import namedtuple
 from mtranslate import translate
 from requests import HTTPError
 
 from mycroft import AdaptIntent, intent_handler
 from mycroft.messagebus.message import Message
 from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
+from mycroft.util import get_cache_directory
 from mycroft.util.parse import normalize
 
-from .skill.mycroft_api import WAApi
+from .skill.wolfram_client import WolframAlphaClient
 from .skill.parse import EnglishQuestionParser
 from .skill.util import process_wolfram_string
-from .skill.wolfram_client import WolframClient
+from .skill.wolfram_client_OLD import WolframClient
+
+
+Query = namedtuple(
+    'Query', ['query', 'spoken_answer', 'display_text', 'image'])
+# Set default values to None.
+# Once Python3.7 is min version, we can switch to:
+# Query = namedtuple('Query', fields, defaults=(None,) * len(fields))
+Query.__new__.__defaults__ = (None,) * len(Query._fields)
 
 
 class WolframAlphaSkill(CommonQuerySkill):
 
     def __init__(self):
         super().__init__()
-        self.__init_client()
+        self._last_query = self._cqs_match = Query()
         self.question_parser = EnglishQuestionParser()
-        self.last_query = None
-        self.last_answer = None
         self.autotranslate = False
+        self.cache_dir = get_cache_directory(self.__class__.__name__)
+        # TODO move client initiliazation to settings changed callback
+        self.__init_client()
 
     def __init_client(self):
         # Attempt to get an AppID skill settings instead (normally this
@@ -44,34 +55,30 @@ class WolframAlphaSkill(CommonQuerySkill):
 
         if appID:
             # user has a private AppID
-            self.client = WolframClient(appID)
+            self.client = WolframAlphaClient(cache_dir=self.cache_dir, app_id=appID)
         else:
             # use the default API for Wolfram queries
-            self.client = WAApi()
+            self.client = WolframAlphaClient(cache_dir=self.cache_dir)
 
     def initialize(self):
         self.on_settings_changed()
         self.settings_change_callback = self.on_settings_changed
-        try:
-            response = self.client.get_visual_answer(
-                "what is 2 + 2",
-                (
-                    self.location["coordinate"]["latitude"],
-                    self.location["coordinate"]["longitude"],
-                ),
-                self.config_core["system_unit"],
-            )
-            self.log.error(response)
-        except Exception as err:
-            self.log.exception(err)
+        self.test_endpoint()
 
     def on_settings_changed(self):
         self.log.debug("Settings changed")
         self.autotranslate = self.settings.get("autotranslate", True)
         self.log.debug("autotranslate: {}".format(self.autotranslate))
 
+    def test_endpoint(self):
+        utterance = "what is 2 + 2"
+        self._cqs_match = Query(utterance, '4')
+        self.get_cqs_match_image()
+        self.display_answer(self._cqs_match.display_text, self._cqs_match.image)
+
+
     def CQS_match_query_phrase(self, utt):
-        self.log.debug("WolframAlpha query: " + utt)
+        self.log.info("WolframAlpha query: " + utt)
 
         # TODO: Localization.  Wolfram only allows queries in English,
         #       so perhaps autotranslation or other languages?  That
@@ -99,7 +106,7 @@ class WolframAlphaSkill(CommonQuerySkill):
         else:
             # This utterance doesn't look like a question, don't waste
             # time with WolframAlpha.
-            self.log.debug("Non-question, ignoring: " + utterance)
+            self.log.info("Non-question, ignoring: %s" % (utterance))
             return False
 
         try:
@@ -122,7 +129,9 @@ class WolframAlphaSkill(CommonQuerySkill):
                         response, from_language="en", to_language=self.lang[:2]
                     )
                     utt = orig_utt
-                self.log.debug("utt: {} res: {}".format(utt, response))
+                self.log.info("Answer: %s" % (response))
+                self._cqs_match = Query(query=utt, spoken_answer=response)
+                self.schedule_event(self.get_cqs_match_image, 0)
                 return (
                     utt,
                     CQSMatchLevel.GENERAL,
@@ -140,24 +149,65 @@ class WolframAlphaSkill(CommonQuerySkill):
             return False
 
     def CQS_action(self, phrase, data):
+        """Display result if selected by Common Query to answer.
+
+        Note common query will speak the response.
+
+        Args:
+            phrase: User utterance of original question
+            data: Callback data specified in CQS_match_query_phrase()
+        """
         """If selected to answer prepare data for follow up queries.
 
         Currently this includes detail on the source of the answer.
         """
-        if data:
-            self.log.info("Setting information for follow up query")
-            self.last_query = data["query"]
-            self.last_answer = data["answer"]
+        if data.get('query') != self._cqs_match.query:
+            # This should never get called, but just in case.
+            self.log.warning("CQS match data was not saved. "
+                             "Please report this to Mycroft.")
+            return
+        self.display_answer(self._cqs_match.display_text,
+                            self._cqs_match.image)
+        self.log.debug("Setting information for follow up query")
+        self._last_query = self._cqs_match
+
+    def get_cqs_match_image(self):
+        """Fetch the image for a CQS answer.
+
+        This is called from a scheduled event to run in its own thread,
+        preventing delays in Common Query answer selection.
+        """
+        display_text, image = self.client.get_visual_answer(
+            self._cqs_match.query,
+            (
+                self.location["coordinate"]["latitude"],
+                self.location["coordinate"]["longitude"],
+            ),
+            self.config_core["system_unit"]
+        )
+        self._cqs_match = self._cqs_match._replace(
+            display_text=display_text, image=image)
+
+    def display_answer(self, text, image=None):
+        """Display the answer."""
+        if image is None:
+            self.gui['answer'] = text
+            self.gui.show_page('answer_only.qml')
+        else:
+            self.gui['title'] = text
+            self.gui['imgLink'] = image
+            self.gui.show_page('feature_image.qml')
 
     @intent_handler(AdaptIntent().require("Give").require("Source"))
     def handle_get_sources(self, _):
         """Intent handler to request the information source of previous answer."""
-        if self.last_query:
+        # TODO deactivate handler when no last query exists.
+        if self._last_query:
             # Send an email to the account this device is registered to
             data = {
-                "query": self.last_query,
-                "answer": self.last_answer,
-                "url_query": self.last_query.replace(" ", "+"),
+                "query": self._last_query.query,
+                "answer": self._last_query.spoken_answer,
+                "url_query": self._last_query.query.replace(" ", "+"),
             }
 
             self.send_email(
