@@ -39,7 +39,8 @@ class WolframAlphaClient:
         # This is an attempt to split them between those that should be
         # presented with a picture, vs those that should only be text.
         self.scanners_with_pics = ["Data"]
-        self.scanners_with_text = ["Simplification"]
+        self.scanners_with_equation = ["Simplification"]
+        self.scanners_with_text_answer = ["Identity"]
 
         self.spoken_api = WolframSpokenApi(app_id)
         self.v2_api = WolframV2Api(cache_dir, app_id)
@@ -50,6 +51,8 @@ class WolframAlphaClient:
 
     def get_visual_answer(self, *args, **kwargs):
         """Get visual answer to a query."""
+        title = None
+        image = None
         data = self.v2_api.get_visual(*args, **kwargs)
 
         if not (data and data.get("pods")):
@@ -65,9 +68,13 @@ class WolframAlphaClient:
         if len(data["pods"]) > 1:
             # index 0 is Input Interpretation
             primary_answer_pod = data["pods"][1]
-            # Return only text for queries that should not have an image
-            if primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_with_text:
-                title = self._generate_text_answer(pods, primary_answer_pod)
+            # Return equation for specific types of queries
+            if primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_with_equation:
+                title = self._generate_equation_answer(pods, primary_answer_pod)
+            # Return text answer only for specific types of queries
+            elif primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_with_text_answer:
+                title = self._generate_text_only_answer(pods, primary_answer_pod)
+            if title is not None:
                 return title, None
         
         title = self._get_title_of_answer(pods)
@@ -98,7 +105,7 @@ class WolframAlphaClient:
             image = search_ddg_images(title, self.cache_dir)
         return image
 
-    def _generate_text_answer(self, pods: dict, primary_pod: dict) -> str:
+    def _generate_equation_answer(self, pods: dict, primary_pod: dict) -> str:
         """Generate a short textual representation of a visual answer.
 
         Args:
@@ -109,6 +116,17 @@ class WolframAlphaClient:
         answer = get_from_nested_dict(primary_pod, "plaintext")
         title = f"{question} = {answer}"
         return title
+
+    def _generate_text_only_answer(self, pods: dict, primary_pod: dict) -> str:
+        """Generate a short textual representation of a visual answer.
+
+        Args:
+            pods: Dict of all pods keyed by Pod ID.
+            primary_pod: The first pod returned after the Input Interpretation.
+        """
+        answer = get_from_nested_dict(primary_pod, "plaintext")
+        clean_answer = remove_nested_parentheses(answer)
+        return clean_answer
 
     def _get_title_of_answer(self, pods: dict) -> str:
         """Extract a title from a visual answer.
