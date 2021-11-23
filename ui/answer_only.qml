@@ -21,10 +21,15 @@ import Mycroft 1.0 as Mycroft
 Mycroft.CardDelegate {
     id: root
     cardBackgroundOverlayColor: "black"
+    property var marginProportion: 0.1
 
     Mycroft.AutoFitLabel {
         id: answer
         anchors.fill: parent
+        anchors.topMargin: parent.height * marginProportion
+        anchors.bottomMargin: parent.height * marginProportion
+        anchors.rightMargin: parent.width * marginProportion
+        anchors.leftMargin: parent.width * marginProportion
         wrapMode: Text.Wrap
         color: "#FFFFFF"
         text: sessionData.answer
