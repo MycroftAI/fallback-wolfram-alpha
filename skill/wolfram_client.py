@@ -246,10 +246,13 @@ class WolframSpokenApi(Api):
         try:
             response = self.send_request(params)
         except HTTPError as err:
-            LOG.error("CAUGHT THE ERROR")
             status_code = err.response.status_code
             if status_code == 401:
                 raise
+            elif status_code == 501:
+                # TODO - work out why we are getting 501's from Mycroft backend.
+                LOG.info("No answer available from Wolfram Alpha.")
+                return None
             else:
                 LOG.exception(err)
                 LOG.error("HTTP response status code: %i" % (status_code))
