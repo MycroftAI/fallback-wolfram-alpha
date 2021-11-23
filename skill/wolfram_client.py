@@ -52,7 +52,7 @@ class WolframAlphaClient:
         """Get visual answer to a query."""
         data = self.v2_api.get_visual(*args, **kwargs)
 
-        if data is None:
+        if not (data and data.get("pods")):
             return None, None
 
         # Map pods by ID to reduce looping over data['pods'] list
