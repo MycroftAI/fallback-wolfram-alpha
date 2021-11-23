@@ -64,20 +64,25 @@ class WolframAlphaClient:
         for pod in data["pods"]:
             pods[pod["id"]] = pod
 
-
         if len(data["pods"]) > 1:
             # index 0 is Input Interpretation
             primary_answer_pod = data["pods"][1]
             LOG.error(primary_answer_pod.get("scanner"))
             # Return equation for specific types of queries
-            if primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_for_equations:
+            if (
+                primary_answer_pod
+                and primary_answer_pod.get("scanner") in self.scanners_for_equations
+            ):
                 title = self._generate_equation_answer(pods, primary_answer_pod)
             # Return text answer only for specific types of queries
-            elif primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_for_conversion:
+            elif (
+                primary_answer_pod
+                and primary_answer_pod.get("scanner") in self.scanners_for_conversion
+            ):
                 title = self._generate_text_only_answer(pods, primary_answer_pod)
             if title is not None:
                 return title, None
-        
+
         title = self._get_title_of_answer(pods)
         image = self._get_image_from_answer(pods, primary_answer_pod, title)
 
