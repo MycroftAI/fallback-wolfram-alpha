@@ -60,7 +60,6 @@ def search_ddg_images(query, file_path: str) -> Optional[str]:
 
     try:
         response = requests.get(requestUrl, headers=headers, params=params)
-        LOG.info(response.text)
         data = json.loads(response.text)
         if len(data['results']) > 0:
             saved_file_path = save_image(

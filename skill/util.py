@@ -14,8 +14,9 @@
 #
 
 import imghdr
+import os
 import re
-from os.path import join
+import time
 from typing import Any, Optional
 
 import requests
@@ -84,7 +85,7 @@ def process_wolfram_string(text: str, config: dict) -> str:
     # Convert !s to factorial
     text = re.sub(r"!", r",factorial", text)
 
-    regex_file_path = join(
+    regex_file_path = os.path.join(
         config["root_dir"], "regex", config["lang"], "list.rx")
     with open(regex_file_path, "r") as regex:
         list_regex = re.compile(regex.readline().strip("\n"))
@@ -114,22 +115,44 @@ def remove_nested_parentheses(input: str) -> str:
     return ret
 
 
-def save_image(img_url: str, file_path: str) -> str:
-    """Save the given image result to the provided file path.
+def save_image(img_url: str, file_dir: str) -> str:
+    """Save the given image result to the provided directory.
 
-    Note that the filetype can vary so it is recommended not to provide a
-    fixed file extension.
+    Currently saves file as timestamp and detected image type file extension.
+    
+    Args:
+        img_url: Url to download image from.
+        file_dir: Directory to save downloaded file to.
+    Returns:
+        Complete file path of saved image file or None.
     """
     if img_url is None:
         return None
     try:
+        # Create unique filename for each request to avoid caching issues
+        file_path = os.path.join(file_dir, str(time.time()))
         img_data = requests.get(img_url).content
         with open(file_path, 'wb+') as f:
             f.write(img_data)
-        LOG.info(f"DDG image successfully downloaded: {file_path}")
-        if imghdr.what(file_path) is not None:
-            return file_path
+        LOG.info(f"Image successfully downloaded: {file_path}")
+        file_type = imghdr.what(file_path)
+        if file_type is not None:
+            saved_file_path = f"{file_path}.{file_type}"
+            os.rename(file_path, saved_file_path)
+            return saved_file_path
         else:
+            os.remove(file_path)
             LOG.error('Downloaded file was not a valid image')
     except Exception as err:
         LOG.exception(err)
+
+def clear_cache(cache_dir):
+    """Delete all files from the given cache directory.
+    
+    Note there are no checks on what the directory is. Use with caution."""
+    try:
+        for file in os.listdir(cache_dir):
+            os.remove(os.path.join(cache_dir, file))
+        return True
+    except:
+        return False
