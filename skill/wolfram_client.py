@@ -39,8 +39,8 @@ class WolframAlphaClient:
         # This is an attempt to split them between those that should be
         # presented with a picture, vs those that should only be text.
         self.scanners_with_pics = ["Data"]
-        self.scanners_with_equation = ["Simplification"]
-        self.scanners_with_text_answer = ["Identity"]
+        self.scanners_for_equations = ["Simplification"]
+        self.scanners_for_conversion = ["Identity", "ChemicalQuantity"]
 
         self.spoken_api = WolframSpokenApi(app_id)
         self.v2_api = WolframV2Api(cache_dir, app_id)
@@ -68,11 +68,12 @@ class WolframAlphaClient:
         if len(data["pods"]) > 1:
             # index 0 is Input Interpretation
             primary_answer_pod = data["pods"][1]
+            LOG.error(primary_answer_pod.get("scanner"))
             # Return equation for specific types of queries
-            if primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_with_equation:
+            if primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_for_equations:
                 title = self._generate_equation_answer(pods, primary_answer_pod)
             # Return text answer only for specific types of queries
-            elif primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_with_text_answer:
+            elif primary_answer_pod and primary_answer_pod.get("scanner") in self.scanners_for_conversion:
                 title = self._generate_text_only_answer(pods, primary_answer_pod)
             if title is not None:
                 return title, None
