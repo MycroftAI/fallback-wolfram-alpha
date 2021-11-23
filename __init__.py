@@ -103,7 +103,7 @@ class WolframAlphaSkill(CommonQuerySkill):
             # This utterance doesn't look like a question, don't waste
             # time with WolframAlpha.
             self.log.info("Non-question, ignoring: %s" % (utterance))
-            return False
+            return None
 
         try:
             response = self.client.get_spoken_answer(
@@ -115,6 +115,10 @@ class WolframAlphaSkill(CommonQuerySkill):
                 self.config_core["system_unit"],
             )
             if response:
+                if response == "No spoken result available":
+                    # Wolfram's Spoken API returns a non-result as a speakable string
+                    # Helpful I guess...
+                    return None
                 response = process_wolfram_string(
                     response, {"lang": self.lang, "root_dir": self.root_dir}
                 )
@@ -124,6 +128,7 @@ class WolframAlphaSkill(CommonQuerySkill):
                         response, from_language="en", to_language=self.lang[:2]
                     )
                     utt = orig_utt
+
                 self.log.info("Answer: %s" % (response))
                 self._cqs_match = Query(query=utt, spoken_answer=response)
                 self.schedule_event(self._get_cqs_match_image, 0)
