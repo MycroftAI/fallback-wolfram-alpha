@@ -89,14 +89,13 @@ class WolframAlphaClient:
         image = None
         # If a 3rd party imagesource exists, see if it's actually an image
         # Some of these are perfect, others are html pages containing an image
-        if primary_pod["scanner"] in self.scanners_with_pics:
-            image_url = get_from_nested_dict(pods, "imagesource")
-            if image_url and "wikipedia.org/wiki/File:" in image_url:
-                image_url = get_image_file_from_wikipedia_url(image_url)
+        image_url = get_from_nested_dict(pods, "imagesource")
+        if image_url and "wikipedia.org/wiki/File:" in image_url:
+            image_url = get_image_file_from_wikipedia_url(image_url)
             LOG.info(f"Image: {image_url}")
             image = save_image(image_url, self.cache_dir)
-            if image is None:
-                image = search_ddg_images(title, self.cache_dir)
+        if image is None:
+            image = search_ddg_images(title, self.cache_dir)
         return image
 
     def _generate_text_answer(self, pods: dict, primary_pod: dict) -> str:

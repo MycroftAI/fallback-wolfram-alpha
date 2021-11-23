@@ -52,11 +52,11 @@ def get_image_file_from_wikipedia_url(input_url):
     Wolfram returns url to Wikipedia's file details page rather than the
     actual image file.
     """
-    protocol, domain, wiki, *remaining = input_url.split('/')
+    protocol, domain, wiki, *remaining = input_url.split("/")
 
     image_url = input_url.replace(
-        'http://en.wikipedia.org/wiki/File:',
-        'https://upload.wikimedia.org/wikipedia/commons/c/cc/'
+        "http://en.wikipedia.org/wiki/File:",
+        "https://upload.wikimedia.org/wikipedia/commons/c/cc/",
     )
     return image_url
 
@@ -86,7 +86,8 @@ def process_wolfram_string(text: str, config: dict) -> str:
     text = re.sub(r"!", r",factorial", text)
 
     regex_file_path = os.path.join(
-        config["root_dir"], "regex", config["lang"], "list.rx")
+        config["root_dir"], "regex", config["lang"], "list.rx"
+    )
     with open(regex_file_path, "r") as regex:
         list_regex = re.compile(regex.readline().strip("\n"))
 
@@ -103,12 +104,12 @@ def remove_nested_parentheses(input: str) -> str:
     This includes content that is nested within multiple sets, eg:
     Lemurs (/ˈliːmər/ (listen) LEE-mər)
     """
-    ret = ''
+    ret = ""
     nest_depth = 0
     for char in input:
-        if char == '(':
+        if char == "(":
             nest_depth += 1
-        elif (char == ')') and nest_depth:
+        elif (char == ")") and nest_depth:
             nest_depth -= 1
         elif not nest_depth:
             ret += char
@@ -119,7 +120,7 @@ def save_image(img_url: str, file_dir: str) -> str:
     """Save the given image result to the provided directory.
 
     Currently saves file as timestamp and detected image type file extension.
-    
+
     Args:
         img_url: Url to download image from.
         file_dir: Directory to save downloaded file to.
@@ -131,8 +132,12 @@ def save_image(img_url: str, file_dir: str) -> str:
     try:
         # Create unique filename for each request to avoid caching issues
         file_path = os.path.join(file_dir, str(time.time()))
-        img_data = requests.get(img_url).content
-        with open(file_path, 'wb+') as f:
+        request_headers = {
+            "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36",
+            "referer": "https://mycroft.ai/",
+        }
+        img_data = requests.get(img_url, headers=request_headers).content
+        with open(file_path, "wb+") as f:
             f.write(img_data)
         LOG.info(f"Image successfully downloaded: {file_path}")
         file_type = imghdr.what(file_path)
@@ -142,13 +147,14 @@ def save_image(img_url: str, file_dir: str) -> str:
             return saved_file_path
         else:
             os.remove(file_path)
-            LOG.error('Downloaded file was not a valid image')
+            LOG.error("Downloaded file was not a valid image")
     except Exception as err:
         LOG.exception(err)
 
+
 def clear_cache(cache_dir):
     """Delete all files from the given cache directory.
-    
+
     Note there are no checks on what the directory is. Use with caution."""
     try:
         for file in os.listdir(cache_dir):
