@@ -13,191 +13,69 @@
 # limitations under the License.
 #
 
-import re
-import wolframalpha
-import requests
-from os.path import dirname, join
-from requests import HTTPError
-from io import BytesIO
+from collections import namedtuple
 from mtranslate import translate
+from requests import HTTPError
 
-from adapt.intent import IntentBuilder
-from mycroft.api import Api
+from mycroft import AdaptIntent, intent_handler
 from mycroft.messagebus.message import Message
-from mycroft.skills.core import intent_handler
-from mycroft.util.parse import normalize
-from mycroft.version import check_version
-from mycroft.util.log import LOG
 from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
+from mycroft.util import get_cache_directory
+from mycroft.util.parse import normalize
+
+from .skill.wolfram_client import WolframAlphaClient
+from .skill.parse import EnglishQuestionParser
+from .skill.util import clear_cache, process_wolfram_string
 
 
-class EnglishQuestionParser(object):
-    """
-    Poor-man's english question parser. Not even close to conclusive, but
-    appears to construct some decent w|a queries and responses.
-    """
-
-    def __init__(self):
-        self.regexes = [
-            # Match things like:
-            #    * when X was Y, e.g. "tell me when america was founded"
-            #    how X is Y, e.g. "how tall is mount everest"
-            re.compile(
-                r".*(?P<QuestionWord>who|what|when|where|why|which|whose) "
-                r"(?P<Query1>.*) (?P<QuestionVerb>is|are|was|were) "
-                r"(?P<Query2>.*)",
-                re.IGNORECASE,
-            ),
-            # Match:
-            #    how X Y, e.g. "how do crickets chirp"
-            re.compile(
-                r".*(?P<QuestionWord>who|what|when|where|why|which|how) "
-                r"(?P<QuestionVerb>\w+) (?P<Query>.*)",
-                re.IGNORECASE,
-            ),
-        ]
-
-    def _normalize(self, groupdict):
-        if "Query" in groupdict:
-            return groupdict
-        elif "Query1" and "Query2" in groupdict:
-            # Join the two parts into a single 'Query'
-            return {
-                "QuestionWord": groupdict.get("QuestionWord"),
-                "QuestionVerb": groupdict.get("QuestionVerb"),
-                "Query": " ".join([groupdict.get("Query1"), groupdict.get("Query2")]),
-            }
-
-    def parse(self, utterance):
-        for regex in self.regexes:
-            match = regex.match(utterance)
-            if match:
-                return self._normalize(match.groupdict())
-        return None
-
-
-SPOKEN_URL = "http://api.wolframalpha.com/v1/spoken"
-
-
-class WolframClient(wolframalpha.Client):
-    """ Adding a spoken api method to the normal wolfram client. """
-
-    def spoken(self, query, lat_lon, units="metric"):
-        r = requests.get(
-            SPOKEN_URL,
-            params={
-                "appid": self.app_id,
-                "i": query,
-                "geolocation": "{},{}".format(*lat_lon),
-                "units": units,
-            },
-        )
-        if r.ok:
-            return r.text
-        else:
-            return None
-
-
-class WAApi(Api):
-    """ Wrapper for wolfram alpha calls through Mycroft Home API. """
-
-    def __init__(self):
-        super(WAApi, self).__init__("wolframAlphaSpoken")
-
-    def get_data(self, response):
-        return response
-
-    def query(self, input):
-        data = self.request({"query": {"input": input}})
-        return wolframalpha.Result(BytesIO(data.content))
-
-    def spoken(self, query, lat_lon, units="metric"):
-        try:
-            r = self.request(
-                {
-                    "query": {
-                        "i": query,
-                        "geolocation": "{},{}".format(*lat_lon),
-                        "units": units,
-                    }
-                }
-            )
-        except HTTPError as e:
-            if e.response.status_code == 401:
-                raise
-            else:
-                r = e.response
-        if r.ok:
-            print(r.text)
-            return r.text
-        else:
-            return None
+Query = namedtuple("Query", ["query", "spoken_answer", "display_text", "image"])
+# Set default values to None.
+# Once Python3.7 is min version, we can switch to:
+# Query = namedtuple('Query', fields, defaults=(None,) * len(fields))
+Query.__new__.__defaults__ = (None,) * len(Query._fields)
 
 
 class WolframAlphaSkill(CommonQuerySkill):
-    PIDS = [
-        "Value",
-        "NotableFacts:PeopleData",
-        "BasicInformation:PeopleData",
-        "Definition",
-        "DecimalApproximation",
-    ]
-
     def __init__(self):
         super().__init__()
-        self.__init_client()
+        self._last_query = self._cqs_match = Query()
         self.question_parser = EnglishQuestionParser()
-        self.last_query = None
-        self.last_answer = None
         self.autotranslate = False
+        self.cache_dir = get_cache_directory(self.__class__.__name__)
+        # Whether the Skill is actively fetching an image
+        self.fetching_image = False
+
+    def initialize(self):
+        self.on_settings_changed()
+        self.settings_change_callback = self.on_settings_changed
+
+    def on_settings_changed(self):
+        self.log.debug("Settings changed")
+        self.autotranslate = self.settings.get("autotranslate", True)
+        for setting in self.settings.keys():
+            self.log.debug("%s: %s" % (setting, self.settings[setting]))
+        self.__init_client()
 
     def __init_client(self):
         # Attempt to get an AppID skill settings instead (normally this
         # doesn't exist, but privacy-conscious might want to do this)
         appID = self.settings.get("appID", None)
+        if appID == "":
+            appID = None
 
-        if appID:
-            # user has a private AppID
-            self.client = WolframClient(appID)
-        else:
-            # use the default API for Wolfram queries
-            self.client = WAApi()
+        self.client = WolframAlphaClient(cache_dir=self.cache_dir, app_id=appID)
 
-    def initialize(self):
-        self._setup()
-        self.settings_change_callback = self.on_settings_changed
-
-    def on_settings_changed(self):
-        self.log.debug("settings changed")
-        self._setup()
-
-    def _setup(self):
-        self.autotranslate = self.settings.get("autotranslate", True)
-        self.log.debug("autotranslate: {}".format(self.autotranslate))
-
-    def get_result(self, res):
-        try:
-            return next(res.results).text
-        except:
-            result = None
-            try:
-                for pid in self.PIDS:
-                    result = self.__find_pod_id(res.pods, pid)
-                    if result:
-                        if pid.endswith(":PeopleData"):
-                            result = parse_people_data(result)
-                        else:
-                            result = result[:5]
-                        break
-                if not result:
-                    result = self.__find_num(res.pods, "200")
-                return result
-            except:
-                return result
+    def _clear_previous_data(self):
+        # Clear any previous match query data
+        self._last_query = self._cqs_match = Query()
+        # Clear the display and any prior session data
+        self.gui.release()
+        # Clear the cache directory of old files
+        clear_cache(self.cache_dir)
 
     def CQS_match_query_phrase(self, utt):
-        self.log.debug("WolframAlpha query: " + utt)
-
+        self.log.info("WolframAlpha query: " + utt)
+        self._clear_previous_data()
         # TODO: Localization.  Wolfram only allows queries in English,
         #       so perhaps autotranslation or other languages?  That
         #       would also involve auto-translation of the result,
@@ -209,7 +87,6 @@ class WolframAlphaSkill(CommonQuerySkill):
         if self.autotranslate and self.lang[:2] != "en":
             utt = translate(utt, from_language=self.lang[:2], to_language="en")
             self.log.debug("translation: {}".format(utt))
-
         utterance = normalize(utt, self.lang, remove_articles=False)
         parsed_question = self.question_parser.parse(utterance)
 
@@ -225,11 +102,11 @@ class WolframAlphaSkill(CommonQuerySkill):
         else:
             # This utterance doesn't look like a question, don't waste
             # time with WolframAlpha.
-            self.log.debug("Non-question, ignoring: " + utterance)
-            return False
+            self.log.info("Non-question, ignoring: %s" % (utterance))
+            return None
 
         try:
-            response = self.client.spoken(
+            response = self.client.get_spoken_answer(
                 utt,
                 (
                     self.location["coordinate"]["latitude"],
@@ -238,14 +115,23 @@ class WolframAlphaSkill(CommonQuerySkill):
                 self.config_core["system_unit"],
             )
             if response:
-                response = self.process_wolfram_string(response)
+                if response == "No spoken result available":
+                    # Wolfram's Spoken API returns a non-result as a speakable string
+                    # Helpful I guess...
+                    return None
+                response = process_wolfram_string(
+                    response, {"lang": self.lang, "root_dir": self.root_dir}
+                )
                 # Automatic re-translation to 'self.lang'
                 if self.autotranslate and self.lang[:2] != "en":
                     response = translate(
                         response, from_language="en", to_language=self.lang[:2]
                     )
                     utt = orig_utt
-                self.log.debug("utt: {} res: {}".format(utt, response))
+
+                self.log.info("Answer: %s" % (response))
+                self._cqs_match = Query(query=utt, spoken_answer=response)
+                self.schedule_event(self._get_cqs_match_image, 0)
                 return (
                     utt,
                     CQSMatchLevel.GENERAL,
@@ -263,59 +149,74 @@ class WolframAlphaSkill(CommonQuerySkill):
             return False
 
     def CQS_action(self, phrase, data):
-        """ If selected prepare to send sources. """
-        if data:
-            self.log.info("Setting information for source")
-            self.last_query = data["query"]
-            self.last_answer = data["answer"]
+        """Display result if selected by Common Query to answer.
 
-    @staticmethod
-    def __find_pod_id(pods, pod_id):
-        # Wolfram returns results in "pods".  This searches a result
-        # structure for a specific pod ID.
-        # See https://products.wolframalpha.com/api/documentation/
-        for pod in pods:
-            if pod_id in pod.id:
-                return pod.text
-        return None
+        Note common query will speak the response.
 
-    @staticmethod
-    def __find_num(pods, pod_num):
-        for pod in pods:
-            if pod.node.attrib["position"] == pod_num:
-                return pod.text
-        return None
+        Args:
+            phrase: User utterance of original question
+            data: Callback data specified in CQS_match_query_phrase()
+        """
+        """If selected to answer prepare data for follow up queries.
 
-    def process_wolfram_string(self, text):
-        # Remove extra whitespace
-        text = re.sub(r" \s+", r" ", text)
+        Currently this includes detail on the source of the answer.
+        """
+        if data.get("query") != self._cqs_match.query:
+            # This should never get called, but just in case.
+            self.log.warning(
+                "CQS match data was not saved. " "Please report this to Mycroft."
+            )
+            return
+        self._display_answer(self._cqs_match.display_text, self._cqs_match.image)
+        self.log.debug("Setting information for follow up query")
+        self._last_query = self._cqs_match
 
-        # Convert | symbols to commas
-        text = re.sub(r" \| ", r", ", text)
+    def _get_cqs_match_image(self):
+        """Fetch the image for a CQS answer.
 
-        # Convert newlines to commas
-        text = re.sub(r"\n", r", ", text)
+        This is called from a scheduled event to run in its own thread,
+        preventing delays in Common Query answer selection.
+        """
+        self.fetching_image = True
+        display_text, image = self.client.get_visual_answer(
+            self._cqs_match.query,
+            (
+                self.location["coordinate"]["latitude"],
+                self.location["coordinate"]["longitude"],
+            ),
+            self.config_core["system_unit"],
+        )
+        self._cqs_match = self._cqs_match._replace(
+            display_text=display_text, image=image
+        )
+        self.bus.emit(Message("skill.wolfram-alpha.image-fetch.ended"))
+        self.fetching_image = False
 
-        # Convert !s to factorial
-        text = re.sub(r"!", r",factorial", text)
+    def _display_answer(self, text, image=None):
+        """Display the answer."""
+        if self.fetching_image:
+            self.bus.once("skill.wolfram-alpha.image-fetch.ended", self._display_answer)
 
-        with open(join(dirname(__file__), "regex", self.lang, "list.rx"), "r") as regex:
-            list_regex = re.compile(regex.readline().strip("\n"))
+        if self.fetching_image or self._cqs_match.image:
+            # If we are still trying to fetch an image a loader will show.
+            self.gui["title"] = self._cqs_match.display_text
+            self.gui["imgLink"] = self._cqs_match.image
+            self.gui.show_page("feature_image.qml")
+        else:
+            self.gui["answer"] = self._cqs_match.display_text
+            self.gui.show_page("answer_only.qml")
+            self.gui.remove_page("feature_image.qml")
 
-        match = list_regex.match(text)
-        if match:
-            text = match.group("Definition")
-
-        return text
-
-    @intent_handler(IntentBuilder("Info").require("Give").require("Source"))
-    def handle_get_sources(self, message):
-        if self.last_query:
+    @intent_handler(AdaptIntent().require("Give").require("Source"))
+    def handle_get_sources(self, _):
+        """Intent handler to request the information source of previous answer."""
+        # TODO deactivate handler when no last query exists.
+        if self._last_query:
             # Send an email to the account this device is registered to
             data = {
-                "query": self.last_query,
-                "answer": self.last_answer,
-                "url_query": self.last_query.replace(" ", "+"),
+                "query": self._last_query.query,
+                "answer": self._last_query.spoken_answer,
+                "url_query": self._last_query.query.replace(" ", "+"),
             }
 
             self.send_email(
@@ -331,14 +232,6 @@ class WolframAlphaSkill(CommonQuerySkill):
 
     def __translate(self, template, data=None):
         return self.dialog_renderer.render(template, data)
-
-
-def parse_people_data(data):
-    """Handle :PeopleData
-    Reduces the length of the returned data somewhat.
-    """
-    lines = data.split("\n")
-    return ". ".join(lines[: min(len(lines), 3)])
 
 
 def create_skill():
