@@ -18,6 +18,7 @@ from mtranslate import translate
 from requests import HTTPError
 
 from mycroft import AdaptIntent, intent_handler
+from mycroft.audio.utils import wait_while_speaking
 from mycroft.messagebus.message import Message
 from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
 from mycroft.util import get_cache_directory
@@ -201,11 +202,15 @@ class WolframAlphaSkill(CommonQuerySkill):
             # If we are still trying to fetch an image a loader will show.
             self.gui["title"] = self._cqs_match.display_text
             self.gui["imgLink"] = self._cqs_match.image
-            self.gui.show_page("feature_image.qml")
+            self.gui.show_page("feature_image.qml", override_idle=True)
+            wait_while_speaking()
+            self.gui.clear()
         else:
             self.gui["answer"] = self._cqs_match.display_text
-            self.gui.show_page("answer_only.qml")
+            self.gui.show_page("answer_only.qml", override_idle=True)
             self.gui.remove_page("feature_image.qml")
+            wait_while_speaking()
+            self.gui.clear()
 
     @intent_handler(AdaptIntent().require("Give").require("Source"))
     def handle_get_sources(self, _):
