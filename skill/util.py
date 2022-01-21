@@ -34,16 +34,22 @@ def get_from_nested_dict(obj: dict, key: str) -> Optional[Any]:
     if key in obj:
         return obj[key]
 
-    for _, value in obj.items():
-        if isinstance(value, dict):
-            item = get_from_nested_dict(value, key)
-            if item is not None:
-                return item
-        elif isinstance(value, list):
-            for list_item in value:
-                item = get_from_nested_dict(list_item, key)
+    try:
+        # there is no easy answer for whether an
+        # item is truly iterable so we will take
+        # the pythonic approach and catch the exception.
+        for _, value in obj.items():
+            if isinstance(value, dict):
+                item = get_from_nested_dict(value, key)
                 if item is not None:
                     return item
+            elif isinstance(value, list):
+                for list_item in value:
+                    item = get_from_nested_dict(list_item, key)
+                    if item is not None:
+                        return item
+    except:
+        pass
 
 
 def get_image_file_from_wikipedia_url(input_url):
