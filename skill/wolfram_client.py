@@ -99,6 +99,11 @@ class WolframAlphaClient:
         Returns:
             File path of image.
         """
+        # the image fetch is causing issues so for now 
+        # we disable it and force the wolfram alpha png
+        image = "/opt/mycroft/skills/fallback-wolfram-alpha.mycroftai/ui/wolfy.png"
+        return image
+
         image = None
         # If a 3rd party imagesource exists, see if it's actually an image
         # Some of these are perfect, others are html pages containing an image
