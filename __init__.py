@@ -18,10 +18,10 @@ from mtranslate import translate
 from requests import HTTPError
 
 from mycroft import AdaptIntent, intent_handler
-from mycroft.audio.utils import wait_while_speaking
 from mycroft.messagebus.message import Message
 from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
 from mycroft.util import get_cache_directory
+from mycroft.audio.utils import wait_while_speaking
 from mycroft.util.parse import normalize
 
 from .skill.wolfram_client import WolframAlphaClient
@@ -132,7 +132,9 @@ class WolframAlphaSkill(CommonQuerySkill):
 
                 self.log.info("Answer: %s" % (response))
                 self._cqs_match = Query(query=utt, spoken_answer=response)
-                self.schedule_event(self._get_cqs_match_image, 0)
+
+                # Don't bother with images
+                # self.schedule_event(self._get_cqs_match_image, 0)
                 return (
                     utt,
                     CQSMatchLevel.GENERAL,
@@ -198,39 +200,41 @@ class WolframAlphaSkill(CommonQuerySkill):
         if self.fetching_image:
             self.bus.once("skill.wolfram-alpha.image-fetch.ended", self._display_answer)
 
-        if self.fetching_image or self._cqs_match.image:
-            # If we are still trying to fetch an image a loader will show.
-            self.gui["title"] = self._cqs_match.display_text
-            self.gui["imgLink"] = self._cqs_match.image
-            self.gui.show_page("feature_image.qml", override_idle=True)
-            wait_while_speaking()
-            self.gui.clear()
-        else:
-            self.gui["answer"] = self._cqs_match.display_text
-            self.gui.show_page("answer_only.qml", override_idle=True)
-            self.gui.remove_page("feature_image.qml")
-            wait_while_speaking()
-            self.gui.clear()
+        # if self.fetching_image or self._cqs_match.image:
+        #     # If we are still trying to fetch an image a loader will show.
+        #     self.gui["title"] = self._cqs_match.display_text
+        #     self.gui["imgLink"] = self._cqs_match.image
+        #     self.gui.show_page("feature_image.qml", override_idle=True)
+        #     wait_while_speaking()
+        #     self.gui.clear()
+        # else:
+
+        # Don't bother with images
+        self.gui["answer"] = self._cqs_match.spoken_answer
+        self.gui.show_page("answer_only.qml", override_idle=True)
+        wait_while_speaking()
+        self.gui.clear()
 
     @intent_handler(AdaptIntent().require("Give").require("Source"))
     def handle_get_sources(self, _):
         """Intent handler to request the information source of previous answer."""
         # TODO deactivate handler when no last query exists.
-        if self._last_query:
-            # Send an email to the account this device is registered to
-            data = {
-                "query": self._last_query.query,
-                "answer": self._last_query.spoken_answer,
-                "url_query": self._last_query.query.replace(" ", "+"),
-            }
+        with self.activity():
+            if self._last_query:
+                # Send an email to the account this device is registered to
+                data = {
+                    "query": self._last_query.query,
+                    "answer": self._last_query.spoken_answer,
+                    "url_query": self._last_query.query.replace(" ", "+"),
+                }
 
-            self.send_email(
-                self.__translate("email.subject", data),
-                self.__translate("email.body", data),
-            )
-            self.speak_dialog("sent.email")
-        else:
-            self.speak_dialog("no.info.to.send")
+                self.send_email(
+                    self.__translate("email.subject", data),
+                    self.__translate("email.body", data),
+                )
+                self.speak_dialog("sent.email", wait=True)
+            else:
+                self.speak_dialog("no.info.to.send", wait=True)
 
     def shutdown(self):
         super(WolframAlphaSkill, self).shutdown()
