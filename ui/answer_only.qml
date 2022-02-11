@@ -23,6 +23,15 @@ Mycroft.CardDelegate {
     cardBackgroundOverlayColor: "black"
     property var marginProportion: 0.1
 
+    Img {
+        width: Mycroft.Units.gridUnit * 6
+        height: Mycroft.Units.gridUnit * 6
+        anchors.top: parent.top
+        anchors.topMargin: Mycroft.Units.gridUnit
+
+        imgSrc: Qt.resolvedUrl("wolfy.png")
+    }
+
     Mycroft.AutoFitLabel {
         id: answer
         anchors.fill: parent
