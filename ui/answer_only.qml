@@ -24,12 +24,12 @@ Mycroft.CardDelegate {
     property var marginProportion: 0.1
 
     Img {
-        width: Mycroft.Units.gridUnit * 6
-        height: Mycroft.Units.gridUnit * 6
+        width: Mycroft.Units.gridUnit * 3
+        height: Mycroft.Units.gridUnit * 3
         anchors.top: parent.top
         anchors.topMargin: Mycroft.Units.gridUnit
 
-        imgSrc: Qt.resolvedUrl("wolfy.png")
+        imgSrc: Qt.resolvedUrl("wolfy_mark.svg")
     }
 
     Mycroft.AutoFitLabel {
