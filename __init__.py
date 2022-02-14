@@ -206,14 +206,14 @@ class WolframAlphaSkill(CommonQuerySkill):
         #     self.gui["imgLink"] = self._cqs_match.image
         #     self.gui.show_page("feature_image.qml", override_idle=True)
         #     wait_while_speaking()
-        #     self.gui.clear()
+        #     self.gui.release()
         # else:
 
         # Don't bother with images
         self.gui["answer"] = self._cqs_match.spoken_answer
         self.gui.show_page("answer_only.qml", override_idle=True)
         wait_while_speaking()
-        self.gui.clear()
+        self.gui.release()
 
     @intent_handler(AdaptIntent().require("Give").require("Source"))
     def handle_get_sources(self, _):
