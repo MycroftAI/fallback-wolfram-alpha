@@ -211,7 +211,7 @@ class WolframAlphaSkill(CommonQuerySkill):
         # Don't bother with images
         self.gui["answer"] = self._cqs_match.spoken_answer
         self.gui.show_page("answer_only.qml", override_idle=True)
-        self.speak(self._cqs_match.spoken_answer)
+        self.speak(self._cqs_match.spoken_answer, wait=True)
         self.gui.release()
 
     @intent_handler(AdaptIntent().require("Give").require("Source"))
