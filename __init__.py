@@ -21,7 +21,6 @@ from mycroft import AdaptIntent, intent_handler
 from mycroft.messagebus.message import Message
 from mycroft.skills.common_query_skill import CommonQuerySkill, CQSMatchLevel
 from mycroft.util import get_cache_directory
-from mycroft.audio.utils import wait_while_speaking
 from mycroft.util.parse import normalize
 
 from .skill.wolfram_client import WolframAlphaClient
@@ -205,14 +204,14 @@ class WolframAlphaSkill(CommonQuerySkill):
         #     self.gui["title"] = self._cqs_match.display_text
         #     self.gui["imgLink"] = self._cqs_match.image
         #     self.gui.show_page("feature_image.qml", override_idle=True)
-        #     wait_while_speaking()
+        #     self.speak(self._cqs_match.spoken_answer)
         #     self.gui.release()
         # else:
 
         # Don't bother with images
         self.gui["answer"] = self._cqs_match.spoken_answer
         self.gui.show_page("answer_only.qml", override_idle=True)
-        wait_while_speaking()
+        self.speak(self._cqs_match.spoken_answer)
         self.gui.release()
 
     @intent_handler(AdaptIntent().require("Give").require("Source"))
