@@ -169,9 +169,11 @@ class WolframAlphaSkill(CommonQuerySkill):
                 "CQS match data was not saved. " "Please report this to Mycroft."
             )
             return
-        self._display_answer(self._cqs_match.display_text, self._cqs_match.image)
-        self.log.debug("Setting information for follow up query")
-        self._last_query = self._cqs_match
+
+        with self.activity():
+            self._display_answer(self._cqs_match.display_text, self._cqs_match.image)
+            self.log.debug("Setting information for follow up query")
+            self._last_query = self._cqs_match
 
     def _get_cqs_match_image(self):
         """Fetch the image for a CQS answer.
